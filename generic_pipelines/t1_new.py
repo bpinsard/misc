@@ -1,5 +1,5 @@
 import os
-from nipype.interfaces import spm, fsl, afni, utility, nipy, utility
+from nipype.interfaces import spm, fsl, afni, utility, nipy, utility, freesurfer
 
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
@@ -230,3 +230,79 @@ def t1_vbm_pipeline(name='t1_preproc'):
     return w
 
 
+
+
+def t1_freesurfer_pipeline(name='t1_preproc'):
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['t1_file','subject_id']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(fields=['labels']),
+        name='outputspec')
+
+
+    n_freesurfer = pe.Node(
+        interface=freesurfer.ReconAll(directive='all',args='-use-gpu'),
+        name='freesurfer',)
+
+    w = pe.Workflow(name=name)
+    w.connect([
+            (inputnode, n_freesurfer, [
+                    ('t1_file','T1_files'),
+                    ('subject_id','subject_id')]),
+            ])
+    return w
+
+
+def extract_wm_surface(name='extract_wm_surface'):
+    
+    inputnode = pe.Node(
+        utility.IdentityInterface(fields=['aseg']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(fields=['surface']),
+        name='outputspec')
+
+    def extract_wm_regions(seg_file,rois_ids):
+        import os
+        import nibabel as nb
+        import numpy as np
+        from nipype.utils.filemanip import fname_presuffix
+        seg = nb.load(seg_file)
+        wm = np.zeros(seg.shape,np.uint8)
+        map(lambda i: np.logical_or(wm,seg.get_data()==i,wm), rois_ids)
+        out_fname=fname_presuffix(seg_file, suffix='_wm.nii.gz',
+                                  newpath=os.getcwd(), use_ext=False)
+        nb.save(nb.Nifti1Image(wm,seg.get_affine()),out_fname)
+        return out_fname
+        
+    n_extract_wm_regions = pe.Node(
+        utility.Function(
+            input_names=['seg_file','rois_ids'],
+            output_names=['wm_file'],
+            function=extract_wm_regions),
+        name='extract_wm_regions')
+    n_extract_wm_regions.inputs.rois_ids=[2,7,16,41,46, 251,252,253,254,255]
+
+    n_tesselate = pe.Node(
+        freesurfer.MRITessellate(label_value=1),
+        name='tesselate')
+    n_wm_main_component = pe.Node(
+        freesurfer.ExtractMainComponent(out_file='rlh.%s.all'),
+        name='wm_main_component')
+
+    n_smooth_tessellation = pe.Node(
+        freesurfer.SmoothTessellation(curvature_averaging_iterations=5,
+                                      smoothing_iterations=5),
+        name='smooth_tesselation')
+
+    w = pe.Workflow(name=name)
+    w.connect([
+        (inputnode, n_extract_wm_regions, [('aseg','seg_file'),]),
+        (n_extract_wm_regions, n_tesselate, [('wm_file','in_file'),]),
+        (n_tesselate, n_wm_main_component, [('surface','in_file'),]),
+        (n_wm_main_component, n_smooth_tessellation,[('out_file','in_file')]),
+        (n_smooth_tessellation, outputnode, [('surface','surface')])
+        ])
+    return w

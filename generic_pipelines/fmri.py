@@ -509,6 +509,7 @@ def warp_rois_gray(name='warp_rois_gray'):
                          function=restrict_to_gray),
         name='restrict_to_gray')
     n_restrict_to_gray.inputs.min_nvox = 100
+    n_restrict_to_gray.inputs.threshold = 1e-3
 
     n_t1_to_fmri = pe.MapNode(
         fsl.FLIRT(interp='nearestneighbour',
@@ -659,4 +660,111 @@ def epi_unwrap(name='epi_unwrap'):
                     ('epi_file','in_file'),]),
        ])
     
+    return w
+
+
+
+def extract_bbox(fname):
+    nii = nb.load(fname)
+    bbox = nii.get_affine().dot([[0]*3,nii.shape]).ravel().tolist()
+    del nii
+    return bbox
+
+def spm_realign_opt(name='spm_realign_opt'):
+
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fmri','reference','mask']),
+        name='inputspec')
+
+    outputnode = pe.Node(
+        utility.IdentityInterface(fields=['motion_parameters','out_file']),
+        name='outputspec')
+
+    n_1st_vol = pe.Node(
+        nipypp.Trim(end_index=1,out_file='%s_1vol.nii',outputtype='NIFTI'),
+        name='1st_vol')
+
+    n_spm_coregister = pe.Node(
+        spm.Coregister(jobtype='estimate',cost_function='mi'),
+        name='coregister')
+
+    n_merge2realign = pe.Node(utility.Merge(2),
+                              name='merge2realign')
+
+    n_spm_realign = fileproxy.GunzipNode(
+        spm.Realign(jobtype='estwrite', write_which=[2,1]),
+        name='realign', proxy_out=False)
+
+    n_resample_mask = pe.Node(
+        afni.Resample(out_file='%s_epi.nii',outputtype='NIFTI'),
+        name='resample_mask')
+    
+    def trim_mp(motion_parameters,range):
+        import os,numpy as np
+        out_file=os.path.abspath("./"+os.path.basename(motion_parameters))
+        np.savetxt(out_file,np.loadtxt(motion_parameters)[range])
+        return out_file
+
+    n_trim_motion_pars=pe.Node(
+        utility.Function(
+            input_names=['motion_parameters','range'],
+            output_names=['motion_parameters'],
+            function=trim_mp),
+        name='trim_motion_pars')
+    n_trim_motion_pars.inputs.range=slice(1,None)
+
+
+    w=pe.Workflow(name=name)
+    w.connect([
+            (inputnode, n_1st_vol, [('fmri','in_file')]),
+            (inputnode, n_spm_coregister, [('reference','target')]),
+            (n_1st_vol, n_spm_coregister, [('out_file','source')]),
+            (n_spm_coregister,n_merge2realign,[('coregistered_source','in1')]),
+            (inputnode, n_merge2realign, [('fmri','in2')]),
+            (n_merge2realign, n_spm_realign, [('out','in_files')]),
+            (n_spm_realign, n_resample_mask,[('mean_image','master')]),
+            (inputnode, n_resample_mask,[('mask','in_file')]),
+
+            (n_spm_realign,outputnode,
+             [(('realigned_files',utility.select,1),'out_file'),]),
+            (n_spm_realign, n_trim_motion_pars,[
+                    ('realignment_parameters','motion_parameters')]),
+            (n_trim_motion_pars,outputnode,[
+                    ('motion_parameters','motion_parameters')]),
+            ])
+    return w
+
+
+def fsl_realign_opt(name='fsl_realign_opt'):
+
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fmri','reference','mask']),
+        name='inputspec')
+
+    n_flirt_epi2t1 = pe.Node(
+        fsl.FLIRT(out_matrix_file='flirt_epi2t1.mat',
+                  cost='normmi', # as in fcon1000 preproc, why??
+                  searchr_x=[-10,10],searchr_y=[-10,10],searchr_z=[-10,10],
+                  dof=6),
+        name='flirt_epi2t1')
+    
+    n_mcflirt_spline = pe.Node(
+        fsl.MCFLIRT(interpolation='spline',
+                    ref_vol=0,
+                    save_plots=True,
+                    save_rms=True,
+                    save_mats=True,
+                    stats_imgs=True,
+                    dof=6),
+        name='mcflirt_spline')
+
+    w=pe.Workflow(name=name)
+    w.connect([
+            (inputnode,n_flirt_epi2t1,[('fmri','in_file'),
+                                       ('reference','reference')]),
+            (inputnode,n_mcflirt_spline,[('fmri','in_file'),]),
+            (n_flirt_epi2t1,n_mcflirt_spline,[('out_matrix_file','init')])
+            ])
     return w

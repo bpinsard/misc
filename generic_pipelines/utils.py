@@ -25,3 +25,21 @@ def fname_presuffix_basename(*args,**kwargs):
     if isinstance(args[0],list):
         return [os.path.basename(f) for f in fmanip.fnames_presuffix(*args,**kwargs)]
     return os.path.basename(fmanip.fname_presuffix(*args,**kwargs))
+
+
+def wrap_iterate(method):
+    return dumps('def %s_wrapped(*args,**kwargs): from %s import %s ; return [ %s((arg0,)+args[1:],**kwargs) for arg0 in args[0]]'%(method.__name__,method.__module__,method.__name__,method.__name__))
+    
+class NoScan(Exception):
+    def __init__(self, scan):
+        self.scan = scan
+    def __str__(self):
+        return 'Warning : no scan %d'%self.scan
+def scan_switch(in_files,scan):
+    from generic_pipelines.utils import NoScan
+    if isinstance(in_files,str) and scan<1:
+        return in_files
+    elif isinstance(in_files,list) and scan<len(in_files):
+        return in_files[scan]
+    else:
+        raise NoScan(scan)
