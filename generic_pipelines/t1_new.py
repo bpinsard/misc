@@ -138,6 +138,7 @@ def t1_pipeline(name='t1_preproc'):
 def seg2mask(tissues_files,out_file=None):
     import nibabel as nb, numpy as np, os
     import scipy.ndimage
+    from generic_pipelines.utils import fname_presuffix_basename
     niis = [nb.load(f) for f in tissues_files]
     data = [n.get_data() for n in niis]
     mask = np.logical_or(data[0]>.5,data[1]>.5)
@@ -198,7 +199,8 @@ def t1_vbm_pipeline(name='t1_preproc'):
         name='merge_crop')
 
     n_crop_all = pe.MapNode(
-        nipy.Crop(out_file='%s_crop.nii.gz', outputtype='NIFTI_GZ'),
+        nipy.Crop(out_file='%s_crop.nii.gz',
+                  outputtype='NIFTI_GZ'),
         iterfield = ['in_file'],
         name='crop_all')
 
@@ -229,28 +231,51 @@ def t1_vbm_pipeline(name='t1_preproc'):
         ])
     return w
 
-
-
+def fs_seg2mask(parc_file,out_file=None):
+    import nibabel as nb, numpy as np, os
+    import scipy.ndimage
+    from generic_pipelines.utils import fname_presuffix_basename
+    nii = nb.load(parc_file)
+    op = ((np.mgrid[:5,:5,:5]-2.0)**2).sum(0)<=4
+    mask = mask2=scipy.ndimage.binary_closing(nii.get_data()>0,op,iterations=2)
+    if out_file==None:
+        out_file=fname_presuffix_basename(parc_file,suffix='_mask')
+    out_file = os.path.abspath(os.path.join(os.getcwd(),out_file))
+    nb.save(nb.Nifti1Image(mask.astype(np.uint8),nii.get_affine()),out_file)
+    del nii, mask, op
+    return out_file
 
 def t1_freesurfer_pipeline(name='t1_preproc'):
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=['t1_file','subject_id']),
         name='inputspec')
-    outputnode = pe.Node(
-        utility.IdentityInterface(fields=['labels']),
-        name='outputspec')
-
 
     n_freesurfer = pe.Node(
         interface=freesurfer.ReconAll(directive='all',args='-use-gpu'),
         name='freesurfer',)
+
+    n_fs_seg2mask = pe.Node(
+        utility.Function(input_names=['parc_file','out_file'],
+                         output_names=['out_file'],
+                         function=fs_seg2mask),
+        name='fs_seg2mask')
+    
+    n_autobox_mask = pe.Node(
+        afni.Autobox(padding=3,out_file='%s_crop.nii'),
+        name='autobox_mask_fs')
 
     w = pe.Workflow(name=name)
     w.connect([
             (inputnode, n_freesurfer, [
                     ('t1_file','T1_files'),
                     ('subject_id','subject_id')]),
+            (n_freesurfer, n_fs_seg2mask,[
+                    (('aparc_aseg',utility.select,1),'parc_file')]),
+            (inputnode,n_fs_seg2mask,[
+            (('t1_file',fname_presuffix_basename,'','_mask.nii','.',False),
+             'out_file')]),
+            (n_fs_seg2mask, n_autobox_mask,[('out_file','in_file')])
             ])
     return w
 

@@ -303,7 +303,7 @@ def base_preproc(trim_realign=True,name='rsfmri_base_preproc'):
     n_mask = pe.Node(
         interface=afni.Automask(
             out_file='%s_mask.nii',
-            brain_file=Undefined,
+#            brain_file=Undefined,
             outputtype='NIFTI'),
         name='mask')
 
