@@ -195,12 +195,44 @@ def connectivity_analysis(name):
         (inputnode,n_extract_ts,[('rois_files','rois_files'),
                                  ('rois_labels','rois_labels_files'),
                                  ('in_file','in_file'),
+                                 ('mask','mask'),
                                  ('tr','sampling_interval')]),
         (n_extract_ts, n_correlation_analysis, [('timeseries','timeseries')]),
         (n_correlation_analysis,outputnode,[('correlations','correlations')]),
 #        (inputnode, n_integration_analysis,[('networks','networks')]),
 #        (n_correlation_analysis,n_integration_analysis,
 #         [('correlations','correlations_file')]),
+        ])
+    return w
+
+
+def reho_analysis(name):
+
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['in_file','mask','rois_files','rois_labels',
+                    'tr','networks']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(fields=['reho']),
+        name='outputspec')
+    n_extract_ts = pe.Node(
+        nitime.GetTimeSeries(),
+        name='extract_ts')
+
+    n_reho_analysis = pe.Node(
+        nitime.HomogeneityAnalysis(),
+        name = 'reho_analysis')
+
+    w=pe.Workflow(name=name)
+    w.connect([
+        (inputnode,n_extract_ts,[('rois_files','rois_files'),
+                                 ('rois_labels','rois_labels_files'),
+                                 ('in_file','in_file'),
+                                 ('mask','mask'),
+                                 ('tr','sampling_interval')]),
+        (n_extract_ts, n_reho_analysis, [('timeseries','timeseries')]),
+        (n_reho_analysis,outputnode,[('kendall_W','reho')]),
         ])
     return w
 
@@ -273,3 +305,39 @@ def distrib_corr_conn(in_file,mask_file,rois_file,rois_labels,distrib):
     ndata=(data-data.mean(1))/data.std(1)
     rois=nb.load(rois_file).get_data()[mask]
     rois_ids = np.unique(rois)
+
+
+def correlation_distrib_analysis(name='correlation_distrib_analysis'):
+    
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['in_file','mask','rois_files','rois_labels']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(fields=['correlation_distances']),
+        name='outputspec')
+
+    n_correlation_distrib = pe.Node(
+        afni.TCorrMap(histogram='%s_corr_hist.nii.gz',
+                      histogram_bin_numbers = 200),
+        name='correlation_distrib')
+
+    n_corrdist_analysis = pe.Node(
+        nitime.CorrelationDistributionAnalysis(),
+        name='corrdist_analysis')
+
+
+    w=pe.Workflow(name=name)
+    w.connect([
+        (inputnode,n_correlation_distrib,[('in_file','in_file'),
+                                          ('mask','mask'),]),
+        (inputnode, n_corrdist_analysis, [
+                    ('in_file','in_file'),('mask','mask'),
+                    ('rois_files','rois_files'),
+                    ('rois_labels','rois_labels_files')]),
+        (n_correlation_distrib,n_corrdist_analysis,[
+                    ('histogram','distribution')]),
+        (n_corrdist_analysis, outputnode,[
+                    ('correlation_distances','correlation_distances')])
+        ])
+    return w

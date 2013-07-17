@@ -1,5 +1,5 @@
 import os,operator,functools
-from nipype.interfaces import spm, fsl, afni, utility, dcm2nii
+from nipype.interfaces import spm, fsl, afni, utility, dcm2nii, freesurfer
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
 import nipype.interfaces.dcmstack as np_dcmstack
@@ -349,7 +349,6 @@ def flirt_complex(mat_file,cplx_file,ref_file):
         flipr = np.diag([-1, 1, 1, 1])
         flipr[0,3] = N_i - 1
         return flipr
-
     def flirt2aff(mat, in_img, ref_img):
         in_hdr = in_img.get_header()
         ref_hdr = ref_img.get_header()
@@ -416,7 +415,6 @@ def make_t1_fieldmap(name='make_t1_fieldmap'):
         fsl.PRELUDE(process3d=True),
         name='unwrap_phases')
 
-
     n_make_fieldmap = pe.Node(
         fsl.FUGUE(smooth3d=3),
         iterfield = ['fmap_out_file','mask_file','fmap_in_file'],
@@ -425,14 +423,125 @@ def make_t1_fieldmap(name='make_t1_fieldmap'):
     w=pe.Workflow(name=name)
 
     w.connect([
-       (inputnode, n_resample_complex,[('complex_image','in_file'),
-                                       ('t1_mask','master')]),
+#       (inputnode, n_resample_complex,[('complex_image','in_file'),
+#                                       ('t1_mask','master')]),
        (inputnode, n_fieldmap_to_t1, [('magnitude_image','in_file'),
                                       ('t1_mag','reference')]),
        (n_fieldmap_to_t1, n_flirt_complex, [('out_matrix_file','mat_file'),]),
        (inputnode, n_flirt_complex, [('complex_image','cplx_file'),
                                      ('t1_mag','ref_file')]),
        (n_flirt_complex, n_phase_mag,[('out_file','complex_in_file')]),
+       (inputnode ,n_phase_mag,[('t1_mask','mask_file')]),
+       (n_phase_mag, n_unwrap_phases, [('phase_out_file','phase_file')]),
+       (n_phase_mag,n_unwrap_phases,[('magnitude_out_file','magnitude_file')]),
+       (inputnode, n_unwrap_phases, [('t1_mask','mask_file')]),
+       (n_unwrap_phases,n_make_fieldmap,[
+                    ('unwrapped_phase_file','phasemap_file')]),
+       (inputnode,n_make_fieldmap,[
+                    ('delta_TE','asym_se_time'),
+                    ('t1_mask','mask_file'),
+                    (('complex_image',fname_presuffix_basename,'','_fieldmap'),'fmap_out_file')]),
+       ])
+
+    return w
+
+
+def fs_resamp_complex(mat_file,cplx_file,ref_file):
+    import numpy as np, os, nibabel as nb
+    from nipype.utils.filemanip import fname_presuffix
+    from scipy.ndimage.interpolation import map_coordinates
+    mat = np.vstack((np.loadtxt(mat_file,skiprows=5),[0,0,0,1]))
+    ref = nb.load(ref_file)
+    cplx = nb.load(cplx_file)
+    mat = np.linalg.inv(mat.dot(cplx.get_affine())).dot(ref.get_affine())
+    grid = np.squeeze(np.mgrid[[slice(0,s) for s in ref.shape]])
+    coords = nb.affines.apply_affine(mat,np.rollaxis(grid,0,4))
+    tmp = np.zeros(ref.shape)
+    out_cplx = np.zeros(ref.shape + cplx.shape[3:], dtype=np.complex64)
+    for t in range((out_cplx.shape[3:]+(1,))[0]):
+        map_coordinates(np.real(cplx.get_data()[...,t]),
+                        coords.reshape(-1,3).T, tmp.ravel(), order=0)
+        out_cplx[...,t] = tmp
+        map_coordinates(np.imag(cplx.get_data()[...,t]),
+                        coords.reshape(-1,3).T, tmp.ravel(), order=0)
+        out_cplx[...,t] += 1j*tmp
+    resampname=fname_presuffix(cplx_file,suffix='_rsamp',newpath=os.getcwd())
+    nb.save(nb.Nifti1Image(out_cplx,ref.get_affine()),resampname)
+    return resampname
+
+
+def make_fs_fieldmap(name='make_fs_fieldmap'):
+
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['complex_image','magnitude_image',
+                    'subject_id','freesurfer_subject_dir',
+                    't1_mask', 'delta_TE']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fieldmap','fieldmap_mask']),
+        name='outputspec')
+
+
+    n_fieldmap_to_t1_bbr = pe.Node(
+        freesurfer.BBRegister(
+            init='header',reg_frame=0, out_fsl_file=True,
+            registered_file=True,
+            contrast_type='t1'),
+        name='fieldmap_to_t1_bbr')
+    """
+    n_fieldmap_to_t1 = pe.Node(
+        fsl.FLIRT(cost='mutualinfo',
+                  dof=6,
+                  no_search=True,
+                  uses_qform=True),
+        name='fieldmap_to_t1')
+        """
+    n_reg_to_mni = pe.Node(
+        freesurfer.preprocess.Tkregister(no_edit=True,xfm_out='%s_xfm.mat'),
+        name='reg_to_mni')
+
+    n_resamp_complex = pe.Node(
+        utility.Function(input_names=['mat_file','cplx_file','ref_file'],
+                         output_names=['out_file'],
+                         function=fs_resamp_complex),
+        name='resamp_complex')
+
+    n_phase_mag = pe.Node(
+        utility.Function(
+            input_names=['complex_in_file', 'mask_file'],
+            output_names=['magnitude_out_file','phase_out_file'],
+            function = complex_to_mag_phase),
+        name='phase_mag')
+
+    n_unwrap_phases = pe.Node(
+        fsl.PRELUDE(process3d=True),
+        name='unwrap_phases')
+
+    n_make_fieldmap = pe.Node(
+        fsl.FUGUE(smooth3d=3,unwarp_direction='z'),
+        iterfield = ['fmap_out_file','mask_file','fmap_in_file'],
+        name='make_fieldmap')
+
+    w=pe.Workflow(name=name)
+
+    w.connect([
+#       (inputnode, n_fieldmap_to_t1, [('magnitude_image','in_file'),
+#                                      ('t1_mag','reference')]),
+       #(n_fieldmap_to_t1, n_flirt_complex, [('out_matrix_file','mat_file'),]),
+
+       (inputnode, n_fieldmap_to_t1_bbr,
+        [('magnitude_image','source_file'),
+         ('freesurfer_subject_dir','subjects_dir'),
+         ('subject_id','subject_id')]),
+       (n_fieldmap_to_t1_bbr, n_reg_to_mni, [('out_reg_file','reg_file')]),
+       (inputnode, n_reg_to_mni,[('magnitude_image','mov'),
+                                 ('freesurfer_subject_dir','subjects_dir'),]),
+       (n_reg_to_mni, n_resamp_complex, [('xfm_out','mat_file'),]),
+       (inputnode, n_resamp_complex, [('complex_image','cplx_file'),
+                                     ('t1_mask','ref_file')]),
+       (n_resamp_complex, n_phase_mag,[('out_file','complex_in_file')]),
        (inputnode ,n_phase_mag,[('t1_mask','mask_file')]),
        (n_phase_mag, n_unwrap_phases, [('phase_out_file','phase_file')]),
        (n_phase_mag,n_unwrap_phases,[('magnitude_out_file','magnitude_file')]),
