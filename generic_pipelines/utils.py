@@ -25,3 +25,19 @@ def fname_presuffix_basename(*args,**kwargs):
     if isinstance(args[0],list):
         return [os.path.basename(f) for f in fmanip.fnames_presuffix(*args,**kwargs)]
     return os.path.basename(fmanip.fname_presuffix(*args,**kwargs))
+
+class NoScan(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return 'No %d scan' % self.value
+    
+
+def scan_switch(in_files,scan):
+    from generic_pipelines.utils import NoScan
+    if isinstance(in_files,str) and scan<1:
+        return in_files
+    elif isinstance(in_files,list) and scan<len(in_files):
+        return in_files[scan]
+    else:
+        raise NoScan(scan)
