@@ -156,9 +156,9 @@ def fmri_qc(name='fmri_qc'):
     w=pe.Workflow(name=name)
     w.connect([
             (inputnode,n_tsnr,[('realigned','in_file')]),
-            (n_tsnr,n_tsnr_stats,[('tsnr_file','tsnr')]),
-            (inputnode,n_tsnr_stats,[('mask','mask'),
-                                     ('grey','grey')]),
+#            (n_tsnr,n_tsnr_stats,[('tsnr_file','tsnr')]),
+#            (inputnode,n_tsnr_stats,[('mask','mask'),
+#                                     ('grey','grey')]),
 
             ])
     return w
@@ -401,7 +401,7 @@ def base_preproc(trim_realign=True,name='rsfmri_base_preproc'):
     w.connect([
         (n_mask, n_mask_mean,  [('out_file', 'in_file2')]),
         (n_mask, n_bandpass_smooth, [('out_file','mask')]),
-        (n_mask_mean, n_segment_epi, [('out_file','in_files')]),
+#        (n_mask_mean, n_segment_epi, [('out_file','in_files')]),
 #        (n_mask_mean, n_normalize, [('out_file','source')]),
         
 #        (n_detrend, n_smooth, [('out_file','in_file')]),
@@ -442,6 +442,7 @@ def epi_normalize(name='epi_normalize'):
 
     n_flirt_epi2t1 = pe.Node(
         fsl.FLIRT(out_matrix_file='flirt_epi2t1.mat',
+                  out_file='%.26s_flirt',
                   cost='normmi', # as in fcon1000 preproc, why??
                   searchr_x=[-10,10],searchr_y=[-10,10],searchr_z=[-10,10],
                   dof=6),
@@ -513,6 +514,7 @@ def warp_rois_gray(name='warp_rois_gray'):
 
     n_t1_to_fmri = pe.MapNode(
         fsl.FLIRT(interp='nearestneighbour',
+                  out_file='%s_epi',
                   apply_xfm=True,),
         iterfield=['in_file'],
         name='t1_to_fmri')

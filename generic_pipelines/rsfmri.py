@@ -131,7 +131,8 @@ def corsica2(name='corsica'):
 
     n_t1_to_fmri = pe.Node(
         fsl.FLIRT(interp='nearestneighbour',
-                  apply_xfm=True,),
+                  apply_xfm=True,
+                  out_file='%s_flirt'),
         name='t1_to_fmri')
 
     n_ica=fileproxy.GunzipNode(
@@ -183,8 +184,9 @@ def connectivity_analysis(name):
 
     n_correlation_analysis = pe.Node(
         nitime.CorrelationAnalysis(            
-            bootstrap_estimation = True,
-            bootstrap_nsamples = 1000),
+#            bootstrap_estimation = True,
+#            bootstrap_nsamples = 1000
+            ),
         name = 'correlation_analysis')
     n_integration_analysis = pe.Node(
         nitime.IntegrationAnalysis(),

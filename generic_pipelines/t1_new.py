@@ -279,6 +279,22 @@ def t1_freesurfer_pipeline(name='t1_preproc'):
             ])
     return w
 
+def extract_wm_regions(seg_file,rois_ids):
+    import os
+    import nibabel as nb
+    import numpy as np
+    from nipype.utils.filemanip import fname_presuffix
+    seg = nb.load(seg_file)
+    wm = np.zeros(seg.shape,np.uint8)
+    for i in rois_ids:
+        np.logical_or(wm,seg.get_data()==i,wm)
+    out_fname=fname_presuffix(seg_file, suffix='_wm.nii.gz',
+                              newpath=os.getcwd(), use_ext=False)
+    nii_out = nb.Nifti1Image(wm,seg.get_affine())
+    nb.save(nii_out, out_fname)
+    del wm, seg, nii_out
+    return out_fname
+
 
 def extract_wm_surface(name='extract_wm_surface'):
     
@@ -289,18 +305,6 @@ def extract_wm_surface(name='extract_wm_surface'):
         utility.IdentityInterface(fields=['surface']),
         name='outputspec')
 
-    def extract_wm_regions(seg_file,rois_ids):
-        import os
-        import nibabel as nb
-        import numpy as np
-        from nipype.utils.filemanip import fname_presuffix
-        seg = nb.load(seg_file)
-        wm = np.zeros(seg.shape,np.uint8)
-        map(lambda i: np.logical_or(wm,seg.get_data()==i,wm), rois_ids)
-        out_fname=fname_presuffix(seg_file, suffix='_wm.nii.gz',
-                                  newpath=os.getcwd(), use_ext=False)
-        nb.save(nb.Nifti1Image(wm,seg.get_affine()),out_fname)
-        return out_fname
         
     n_extract_wm_regions = pe.Node(
         utility.Function(
@@ -331,3 +335,24 @@ def extract_wm_surface(name='extract_wm_surface'):
         (n_smooth_tessellation, outputnode, [('surface','surface')])
         ])
     return w
+
+
+def freesurfers2csv(aparc_stats,aseg_stats,meta_data):
+    import numpy as np,os
+    data = []
+    md_keys = meta_data[0].keys()
+    for parcs, seg, md  in zip(aparc_stats, aseg_stats, meta_data):
+        lh = np.loadtxt(parcs[0], dtype=np.str)
+        rh = np.loadtxt(parcs[1], dtype=np.str)
+        aseg = np.loadtxt(seg, dtype=np.str)
+        data.append(np.hstack((
+                    [md[k] for k in md_keys],
+                    aseg[:,3],lh[:,2:5].ravel(),lh[:,2:5].ravel(),)))
+        if not 'header' in locals():
+            header = np.hstack([md_keys+aseg[:,4].tolist()] +[
+                    reduce(lambda l,x: l+[x+'_%s_%s'%(hemi,meas) for meas in ['surf','vol','thick']], labels,[]) for hemi,labels in [('l',lh[:,0]),('r',rh[:,0])]])
+        del lh, rh, aseg
+
+    out_fname = os.path.join(os.getcwd(),'freesurfer_stats.csv',)
+    np.savetxt(out_fname, np.vstack(data), '"%s"', header=','.join(header.tolist()),delimiter=',')
+    return out_fname
