@@ -1,5 +1,5 @@
 import os
-from nipype.interfaces import spm, fsl, afni, nitime, dcm2nii, utility, lif
+from nipype.interfaces import spm, fsl, afni, nitime, dcm2nii, utility, lif, freesurfer
  
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
@@ -334,7 +334,7 @@ def base_preproc(trim_realign=True,name='rsfmri_base_preproc'):
         name='coregister_gray_linear')
 
     n_smooth = pe.Node(
-        afni.BlurInMask(fwhm=5.0, suffix='_smooth', float_out=True),
+        afni.BlurInMask(fwhm=5.0, out_file='%s_smooth', float_out=True),
         name = 'smooth')    
 
     n_bandpass_smooth = pe.Node(
@@ -768,5 +768,33 @@ def fsl_realign_opt(name='fsl_realign_opt'):
                                        ('reference','reference')]),
             (inputnode,n_mcflirt_spline,[('fmri','in_file'),]),
             (n_flirt_epi2t1,n_mcflirt_spline,[('out_matrix_file','init')])
+            ])
+    return w
+
+
+def epi_fs_coregister(name='epi_fs_coregister'):
+    
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fmri','subject_id','subjects_dir','roi_file']),
+        name='inputspec')
+
+    n_bbregister = pe.Node(
+        freesurfer.BBRegister(init='fsl', contrast_type='t2',
+                              out_fsl_file=True),
+        name='bbregister')
+
+    n_fsrois2epi = pe.Node(
+        freesurfer.ApplyVolTransform(inverse=True, interp='nearest',
+                                     transformed_file='epi_aparc.aseg.nii.gz'),
+        name='fsrois2epi')
+    w=pe.Workflow(name=name)
+    w.connect([
+            (inputnode, n_bbregister,[('fmri','source_file'),
+                                      ('subjects_dir','subjects_dir'),
+                                      ('subject_id','subject_id')]),
+            (n_bbregister, n_fsrois2epi,[('out_reg_file','reg_file')]),
+            (inputnode, n_fsrois2epi, [('fmri','source_file'),
+                                       ('roi_file','target_file')]),
             ])
     return w

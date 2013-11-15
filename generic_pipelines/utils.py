@@ -43,3 +43,16 @@ def scan_switch(in_files,scan):
         return in_files[scan]
     else:
         raise NoScan(scan)
+
+
+        
+def wildcard(p,s=slice(0,None)):
+    import os
+    if isinstance(p,list):
+        if isinstance(s,list):
+            return [os.path.join(p[i],'*') for i in s]
+        elif isinstance(s,slice):
+            return [os.path.join(pp,'*') for pp in p[s]]
+        elif isinstance(s,int):
+            return os.path.join(p[s],'*')
+    return os.path.join(p,'*')

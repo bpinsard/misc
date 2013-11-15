@@ -345,12 +345,24 @@ def freesurfers2csv(aparc_stats,aseg_stats,meta_data):
         lh = np.loadtxt(parcs[0], dtype=np.str)
         rh = np.loadtxt(parcs[1], dtype=np.str)
         aseg = np.loadtxt(seg, dtype=np.str)
-        data.append(np.hstack((
-                    [md[k] for k in md_keys],
-                    aseg[:,3],lh[:,2:5].ravel(),lh[:,2:5].ravel(),)))
+        if not 'lh_labels' in locals():
+            lh_labels = lh[:,0].tolist()
+            rh_labels = rh[:,0].tolist()
+            seg_labels = aseg[:,4].tolist()
+        def fb_to_def(l,d,i):
+            w=np.where(d[:,i]==l)[0]
+            if w.size>0:
+                return d[w[0]]
+            else:
+                return np.ones(d.shape[1])*-1
+        lh_data = np.hstack([fb_to_def(l,lh,0)[2:5] for l in lh_labels])
+        rh_data = np.hstack([fb_to_def(l,rh,0)[2:5] for l in rh_labels])
+        seg_data = np.hstack([fb_to_def(l,aseg,4)[3] for l in seg_labels])
+        meta = [md[k] for k in md_keys]
+        data.append(np.hstack((meta,seg_data,lh_data,rh_data,)))
         if not 'header' in locals():
-            header = np.hstack([md_keys+aseg[:,4].tolist()] +[
-                    reduce(lambda l,x: l+[x+'_%s_%s'%(hemi,meas) for meas in ['surf','vol','thick']], labels,[]) for hemi,labels in [('l',lh[:,0]),('r',rh[:,0])]])
+            header = np.hstack([md_keys+seg_labels] +[
+                    reduce(lambda l,x: l+[x+'_%s_%s'%(hemi,meas) for meas in ['surf','vol','thick']], labels,[]) for hemi,labels in [('l',lh_labels),('r',rh_labels)]])
         del lh, rh, aseg
 
     out_fname = os.path.join(os.getcwd(),'freesurfer_stats.csv',)
