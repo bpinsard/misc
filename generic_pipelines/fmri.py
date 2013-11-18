@@ -776,13 +776,25 @@ def epi_fs_coregister(name='epi_fs_coregister'):
     
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=['fmri','subject_id','subjects_dir','roi_file']),
+            fields=['fmri','subject_id','subjects_dir',
+                    'roi_file','mask_file']),
         name='inputspec')
+
+    outputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fmri_mask','fmri_rois','reg_file']),
+        name='inputspec')
+
 
     n_bbregister = pe.Node(
         freesurfer.BBRegister(init='fsl', contrast_type='t2',
                               out_fsl_file=True),
         name='bbregister')
+
+    n_fsmask2epi = pe.Node(
+        freesurfer.ApplyVolTransform(inverse=True, interp='nearest',
+                                     transformed_file='mask_epi.nii.gz'),
+        name='fsmask2epi')
 
     n_fsrois2epi = pe.Node(
         freesurfer.ApplyVolTransform(inverse=True, interp='nearest',
@@ -796,5 +808,11 @@ def epi_fs_coregister(name='epi_fs_coregister'):
             (n_bbregister, n_fsrois2epi,[('out_reg_file','reg_file')]),
             (inputnode, n_fsrois2epi, [('fmri','source_file'),
                                        ('roi_file','target_file')]),
+            (n_bbregister, n_fsmask2epi,[('out_reg_file','reg_file')]),
+            (inputnode, n_fsmask2epi, [('fmri','source_file'),
+                                       ('mask_file','target_file')]),
+            (n_bbregister, outputnode,[('out_reg_file','reg_file')]),
+            (fsmask2epi, outputnode, [('out_file','fmri_mask')]),
+            (fsrois2epi, outputnode, [('out_file','fmri_rois')]),
             ])
     return w
