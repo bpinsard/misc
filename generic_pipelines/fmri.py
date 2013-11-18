@@ -812,7 +812,7 @@ def epi_fs_coregister(name='epi_fs_coregister'):
             (inputnode, n_fsmask2epi, [('fmri','source_file'),
                                        ('mask_file','target_file')]),
             (n_bbregister, outputnode,[('out_reg_file','reg_file')]),
-            (n_fsmask2epi, outputnode, [('out_file','fmri_mask')]),
-            (n_fsrois2epi, outputnode, [('out_file','fmri_rois')]),
+            (n_fsmask2epi, outputnode, [('transformed_file','fmri_mask')]),
+            (n_fsrois2epi, outputnode, [('transformed_file','fmri_rois')]),
             ])
     return w
