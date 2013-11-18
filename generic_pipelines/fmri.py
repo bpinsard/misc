@@ -783,7 +783,7 @@ def epi_fs_coregister(name='epi_fs_coregister'):
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['fmri_mask','fmri_rois','reg_file']),
-        name='inputspec')
+        name='outputspec')
 
 
     n_bbregister = pe.Node(
