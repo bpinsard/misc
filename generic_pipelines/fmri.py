@@ -872,9 +872,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
     n_restrict_to_gray_fs.inputs.threshold = 1e-3
 
     n_t1_to_fmri = pe.MapNode(
-        fsl.FLIRT(interp='nearestneighbour',
-                  out_file='%s_epi',
-                  apply_xfm=True,),
+        fsl.ApplyVolTransform(interp='nearest',inverse=True),
         iterfield=['in_file'],
         name='t1_to_fmri')
 
@@ -889,11 +887,14 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
               ('seg','source_file')]),
             (inputnode,n_restrict_to_gray_fs,[('seg','seg')]),
             (n_mni_to_t1,n_restrict_to_gray_fs,[('transformed_file','rois')]),
-            (n_restrict_to_gray_fs,n_t1_to_fmri,[('masked_rois','in_file')]),
-            (inputnode,n_t1_to_fmri,[('fmri_reference','reference'),
-                                     ('t1_to_epi','in_matrix_file')]),
+            (n_restrict_to_gray_fs,n_t1_to_fmri,[
+                    ('masked_rois','target_file'),
+                    (('masked_rois',fname_presuffix_basename,'','_epi'),
+                     'transformed_file'),]),
+            (inputnode,n_t1_to_fmri,[('fmri_reference','source_file'),
+                                     ('t1_to_epi','reg_file')]),
             (n_mni_to_t1,outputnode,[('transformed_file','t1_rois')]),
-            (n_t1_to_fmri,outputnode,[('out_file','fmri_rois')]),
+            (n_t1_to_fmri,outputnode,[('transformed_file','fmri_rois')]),
             (n_restrict_to_gray_fs,outputnode,[('masked_rois','t1_gray_rois')])
             ])
     return w
