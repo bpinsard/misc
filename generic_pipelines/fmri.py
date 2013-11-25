@@ -872,7 +872,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
     n_restrict_to_gray_fs.inputs.threshold = 1e-3
 
     n_t1_to_fmri = pe.MapNode(
-        fsl.ApplyVolTransform(interp='nearest',inverse=True),
+        freesurfer.ApplyVolTransform(interp='nearest',inverse=True),
         iterfield=['in_file'],
         name='t1_to_fmri')
 
