@@ -260,7 +260,7 @@ def t1_freesurfer_pipeline(name='t1_preproc'):
                          output_names=['out_file'],
                          function=fs_seg2mask),
         name='fs_seg2mask')
-    
+
     n_autobox_mask = pe.Node(
         afni.Autobox(padding=3,out_file='%s_crop.nii'),
         name='autobox_mask_fs')
