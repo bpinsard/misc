@@ -782,7 +782,7 @@ def epi_fs_coregister(name='epi_fs_coregister'):
 
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=['fmri_mask','fmri_rois','reg_file']),
+            fields=['fmri_mask','fmri_rois','reg_file','fsl_reg_file']),
         name='outputspec')
 
 
@@ -812,7 +812,83 @@ def epi_fs_coregister(name='epi_fs_coregister'):
             (inputnode, n_fsmask2epi, [('fmri','source_file'),
                                        ('mask_file','target_file')]),
             (n_bbregister, outputnode,[('out_reg_file','reg_file')]),
+            (n_bbregister, outputnode,[('out_fsl_file','fsl_reg_file')]),
             (n_fsmask2epi, outputnode, [('transformed_file','fmri_mask')]),
             (n_fsrois2epi, outputnode, [('transformed_file','fmri_rois')]),
+            ])
+    return w
+
+
+def restrict_to_gray(rois, seg, class, min_nvox=12):
+    import os, nibabel as nb, numpy as np
+    from nipype.utils.filemanip import fname_presuffix
+    if not isinstance(rois,list):
+        rois = [rois]
+    roi_niis = [nb.load(r) for r in rois]
+    mask = nb.load(seg).get_data() == class
+    rois_data = [r.get_data() for r in roi_niis]
+    new_rois = [r*mask for r in rois_data]
+    nfnames=[]
+    for od,nd,nii,fname in zip(rois_data,new_rois,roi_niis,rois):
+        for rid in np.unique(od)[1:]:
+            if np.count_nonzero(nd==rid) < min_nvox:
+                nd[od==rid] = rid
+        nfname = fname_presuffix(fname,newpath=os.getcwd(),suffix='_gmonly')
+        nb.save(nb.Nifti1Image(nd,nii.get_affine(),nii.get_header()),nfname)
+        nfnames.append(nfname)
+    return nfnames
+
+
+def warp_rois_gray_fs(name='warp_rois_gray_fs'):
+
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fmri_reference','seg','mni_reg','def_field',
+                    'rois_files','t1_to_epi']),
+        name='inputspec')
+
+    outputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['t1_rois','t1_gray_rois','fmri_rois']),
+        name='outputspec')
+    
+    n_mni_to_t1 = pe.MapNode(
+        freesurfer.ApplyVolTransform(interp='nearest',
+                                     no_def_m3z_path=True,
+                                     inverse=True,invert_morph=True),
+        iterfield = ['target_file','transformed_file'],
+        name='mni_to_t1')
+
+    n_restrict_to_gray_fs = pe.Node(
+        utility.Function(input_names=['rois','seg','class'],
+                         output_names=['masked_rois'],
+                         function=restrict_to_gray_fs),
+        name='restrict_to_gray_fs')
+    n_restrict_to_gray.inputs.min_nvox = 100
+    n_restrict_to_gray.inputs.threshold = 1e-3
+
+    n_t1_to_fmri = pe.MapNode(
+        fsl.FLIRT(interp='nearestneighbour',
+                  out_file='%s_epi',
+                  apply_xfm=True,),
+        iterfield=['in_file'],
+        name='t1_to_fmri')
+
+    w=pe.Workflow(name=name)
+    w.connect([
+            (inputnode,n_mni_to_t1,
+             [('rois_files','target_file'),
+              ((fname_presuffix,'rois_files','','_native'),'transformed_file'),
+              ('def_field','m3z_file'),
+              ('mni_reg','reg_file'),
+              ('gray_matter','mov')]),
+            (inputnode,n_restrict_to_gray,[('gray_matter','mask')]),
+            (n_mni_to_t1,n_restrict_to_gray,[('transformed_file','rois')]),
+            (n_restrict_to_gray,n_t1_to_fmri,[('masked_rois','in_file')]),
+            (inputnode,n_t1_to_fmri,[('fmri_reference','reference'),
+                                     ('t1_to_epi','in_matrix_file')]),
+            (n_mni_to_t1,outputnode,[('out_files','t1_rois')]),
+            (n_restrict_to_gray,outputnode,[('masked_rois','t1_gray_rois')]),
+            (n_t1_to_fmri,outputnode,[('out_file','fmri_rois')]),
             ])
     return w
