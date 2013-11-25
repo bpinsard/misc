@@ -819,13 +819,16 @@ def epi_fs_coregister(name='epi_fs_coregister'):
     return w
 
 
-def restrict_to_gray(rois, seg, class, min_nvox=12):
+def restrict_to_gray(rois, seg, tissues, min_nvox=12):
     import os, nibabel as nb, numpy as np
     from nipype.utils.filemanip import fname_presuffix
     if not isinstance(rois,list):
         rois = [rois]
     roi_niis = [nb.load(r) for r in rois]
-    mask = nb.load(seg).get_data() == class
+    seg = nb.load(seg).get_data()
+    mask = np.zeros(seg.shape,dtype=np.bool)
+    for t in tissues:
+        np.logical_or(mask,mask==t,mask)
     rois_data = [r.get_data() for r in roi_niis]
     new_rois = [r*mask for r in rois_data]
     nfnames=[]
@@ -865,6 +868,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
                          function=restrict_to_gray_fs),
         name='restrict_to_gray_fs')
     n_restrict_to_gray.inputs.min_nvox = 100
+    n_restrict_to_gray.inputs.tissues = [2,42,8,47,12,51,11,50,10,49,18,54,26,58]
     n_restrict_to_gray.inputs.threshold = 1e-3
 
     n_t1_to_fmri = pe.MapNode(
@@ -882,7 +886,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
               ('def_field','m3z_file'),
               ('mni_reg','reg_file'),
               ('gray_matter','mov')]),
-            (inputnode,n_restrict_to_gray,[('gray_matter','mask')]),
+            (inputnode,n_restrict_to_gray,[('seg','tissues')]),
             (n_mni_to_t1,n_restrict_to_gray,[('transformed_file','rois')]),
             (n_restrict_to_gray,n_t1_to_fmri,[('masked_rois','in_file')]),
             (inputnode,n_t1_to_fmri,[('fmri_reference','reference'),
