@@ -867,9 +867,9 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
                          output_names=['masked_rois'],
                          function=restrict_to_gray_fs),
         name='restrict_to_gray_fs')
-    n_restrict_to_gray.inputs.min_nvox = 100
-    n_restrict_to_gray.inputs.tissues = [2,42,8,47,12,51,11,50,10,49,18,54,26,58]
-    n_restrict_to_gray.inputs.threshold = 1e-3
+    n_restrict_to_gray_fs.inputs.min_nvox = 100
+    n_restrict_to_gray_fs.inputs.tissues = [2,42,8,47,12,51,11,50,10,49,18,54,26,58]
+    n_restrict_to_gray_fs.inputs.threshold = 1e-3
 
     n_t1_to_fmri = pe.MapNode(
         fsl.FLIRT(interp='nearestneighbour',
@@ -882,17 +882,18 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
     w.connect([
             (inputnode,n_mni_to_t1,
              [('rois_files','target_file'),
-              ((fname_presuffix,'rois_files','','_native'),'transformed_file'),
+              (('rois_files',fname_presuffix_basename,'','_native'),
+               'transformed_file'),
               ('def_field','m3z_file'),
               ('mni_reg','reg_file'),
-              ('gray_matter','mov')]),
-            (inputnode,n_restrict_to_gray,[('seg','tissues')]),
-            (n_mni_to_t1,n_restrict_to_gray,[('transformed_file','rois')]),
-            (n_restrict_to_gray,n_t1_to_fmri,[('masked_rois','in_file')]),
+              ('seg','source_file')]),
+            (inputnode,n_restrict_to_gray_fs,[('seg','tissues')]),
+            (n_mni_to_t1,n_restrict_to_gray_fs,[('transformed_file','rois')]),
+            (n_restrict_to_gray_fs,n_t1_to_fmri,[('masked_rois','in_file')]),
             (inputnode,n_t1_to_fmri,[('fmri_reference','reference'),
                                      ('t1_to_epi','in_matrix_file')]),
-            (n_mni_to_t1,outputnode,[('out_files','t1_rois')]),
-            (n_restrict_to_gray,outputnode,[('masked_rois','t1_gray_rois')]),
+            (n_mni_to_t1,outputnode,[('transformed_file','t1_rois')]),
             (n_t1_to_fmri,outputnode,[('out_file','fmri_rois')]),
+            (n_restrict_to_gray_fs,outputnode,[('masked_rois','t1_gray_rois')])
             ])
     return w
