@@ -887,7 +887,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
               ('def_field','m3z_file'),
               ('mni_reg','reg_file'),
               ('seg','source_file')]),
-            (inputnode,n_restrict_to_gray_fs,[('seg','tissues')]),
+            (inputnode,n_restrict_to_gray_fs,[('seg','seg')]),
             (n_mni_to_t1,n_restrict_to_gray_fs,[('transformed_file','rois')]),
             (n_restrict_to_gray_fs,n_t1_to_fmri,[('masked_rois','in_file')]),
             (inputnode,n_t1_to_fmri,[('fmri_reference','reference'),
