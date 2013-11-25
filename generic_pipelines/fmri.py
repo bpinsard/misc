@@ -873,7 +873,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
 
     n_t1_to_fmri = pe.MapNode(
         freesurfer.ApplyVolTransform(interp='nearest',inverse=True),
-        iterfield=['in_file'],
+        iterfield=['target_file'],
         name='t1_to_fmri')
 
     w=pe.Workflow(name=name)
