@@ -819,7 +819,7 @@ def epi_fs_coregister(name='epi_fs_coregister'):
     return w
 
 
-def restrict_to_gray(rois, seg, tissues, min_nvox=12):
+def restrict_to_gray_fs(rois, seg, tissues, min_nvox=12):
     import os, nibabel as nb, numpy as np
     from nipype.utils.filemanip import fname_presuffix
     if not isinstance(rois,list):
