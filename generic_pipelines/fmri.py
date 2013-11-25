@@ -852,7 +852,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
 
     outputnode = pe.Node(
         utility.IdentityInterface(
-            fields=['t1_rois','t1_gray_rois','fmri_rois']),
+            fields=['t1_rois','t1_gray_rois','fmri_rois','min_nvox']),
         name='outputspec')
     
     n_mni_to_t1 = pe.MapNode(
@@ -863,7 +863,7 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
         name='mni_to_t1')
 
     n_restrict_to_gray_fs = pe.Node(
-        utility.Function(input_names=['rois','seg','class'],
+        utility.Function(input_names=['rois','seg','tissues'],
                          output_names=['masked_rois'],
                          function=restrict_to_gray_fs),
         name='restrict_to_gray_fs')
