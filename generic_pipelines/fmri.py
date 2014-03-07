@@ -476,6 +476,8 @@ def restrict_to_gray(rois, mask, threshold=.5, min_nvox=12):
     roi_niis = [nb.load(r) for r in rois]
     mask = nb.load(mask).get_data() > threshold
     rois_data = [r.get_data() for r in roi_niis]
+    for r in rois_data:
+        r[np.isnan(r)] = 0
     new_rois = [r*mask for r in rois_data]
     nfnames=[]
     for od,nd,nii,fname in zip(rois_data,new_rois,roi_niis,rois):
