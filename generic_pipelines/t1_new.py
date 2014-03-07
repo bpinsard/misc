@@ -237,7 +237,8 @@ def fs_seg2mask(parc_file,out_file=None):
     from generic_pipelines.utils import fname_presuffix_basename
     nii = nb.load(parc_file)
     op = ((np.mgrid[:5,:5,:5]-2.0)**2).sum(0)<=4
-    mask = mask2=scipy.ndimage.binary_closing(nii.get_data()>0,op,iterations=2)
+    mask = scipy.ndimage.binary_closing(nii.get_data()>0,op,iterations=2)
+    scipy.ndimage.binary_fill_holes(mask,output=mask)
     if out_file==None:
         out_file=fname_presuffix_basename(parc_file,suffix='_mask')
     out_file = os.path.abspath(os.path.join(os.getcwd(),out_file))
