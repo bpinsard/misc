@@ -292,6 +292,8 @@ def base_preproc(trim_realign=True,name='rsfmri_base_preproc'):
     
     n_realign = pe.Node(
         fsl.MCFLIRT(ref_vol=0,
+                    mean_vol=True,
+                    
                     save_plots=True,
                     save_rms=True,
                     save_mats=True,
