@@ -132,17 +132,20 @@ def fmri_qc(name='fmri_qc'):
     
     n_tsnr = pe.Node(algmisc.TSNR(), name='tsnr')
 
-    def tsnr_stats(tsnr,mask,grey):
+    def tsnr_stats(tsnr,mask,grey=None):
         import nibabel as nb, numpy as np
         tsnr=nb.load(tsnr).get_data()
         mask=np.logical_and(
             nb.load(mask).get_data()>0,
             np.logical_not(np.logical_or(np.isinf(tsnr),np.isnan(tsnr))))
-        grey=np.logical_and(nb.load(grey).get_data()>0, mask)
+        grey_tsnr_mean = np.nan
+        grey_tsnr_std = np.nan
+        if grey is not None:
+            grey=np.logical_and(nb.load(grey).get_data()>0, mask)
+            grey_tsnr_mean = tsnr[grey].mean()
+            grey_tsnr_std = tsnr[grey].std()
         brain_tsnr_mean = tsnr[mask].mean()
         brain_tsnr_std = tsnr[mask].std()
-        grey_tsnr_mean = tsnr[grey].mean()
-        grey_tsnr_std = tsnr[grey].std()
         return brain_tsnr_mean,brain_tsnr_std,grey_tsnr_mean,grey_tsnr_std
     
     n_tsnr_stats = pe.Node(
@@ -156,9 +159,9 @@ def fmri_qc(name='fmri_qc'):
     w=pe.Workflow(name=name)
     w.connect([
             (inputnode,n_tsnr,[('realigned','in_file')]),
-#            (n_tsnr,n_tsnr_stats,[('tsnr_file','tsnr')]),
-#            (inputnode,n_tsnr_stats,[('mask','mask'),
-#                                     ('grey','grey')]),
+            (n_tsnr,n_tsnr_stats,[('tsnr_file','tsnr')]),
+            (inputnode,n_tsnr_stats,[('mask','mask'),
+                                     ('grey','grey')]),
 
             ])
     return w
@@ -470,10 +473,9 @@ def epi_normalize(name='epi_normalize'):
         (n_flirt_epi2t1,outputnode,[('out_matrix_file','epi2t1_warp')]),
         (n_flirt_epi2t1,n_t1_to_epi,[('out_matrix_file','in_file')]),
         (n_t1_to_epi,outputnode,[('out_file','t1_to_epi_warp')]),
-        (n_restrict_to_gray,n_t1_to_fmri,[('masked_rois','in_file')]),
 
-        (inputnode,n_mask_to_epi,[('fmri_reference','reference'),
-                                 ('t1_mask','in_file')]),
+        (inputnode,n_mask_to_epi,[('fmri_mean','reference'),
+                                  ('t1_mask','in_file')]),
         (n_t1_to_epi, n_mask_to_epi,[('out_file','in_matrix_file')]),
         (n_mask_to_epi, outputnode, [('out_file','epi_mask')])
 #        (n_spm_coregister,outputnode,[('coregistered_source',
