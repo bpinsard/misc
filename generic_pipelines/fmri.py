@@ -293,7 +293,6 @@ def base_preproc(trim_realign=True,name='rsfmri_base_preproc'):
     n_realign = pe.Node(
         fsl.MCFLIRT(ref_vol=0,
                     mean_vol=True,
-                    
                     save_plots=True,
                     save_rms=True,
                     save_mats=True,
@@ -424,12 +423,12 @@ def epi_normalize(name='epi_normalize'):
 
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=['fmri_mean','t1','t1_to_mni']),
+            fields=['fmri_mean','t1','t1_to_mni','t1_mask']),
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['epi2t1_warp','coregistered_fmri_mean','epi2mni_warp',
-                    't1_to_epi_warp']),
+                    't1_to_epi_warp','epi_mask']),
         name='outputspec')
 
     n_spm_coregister = pe.Node(
@@ -452,6 +451,12 @@ def epi_normalize(name='epi_normalize'):
     n_t1_to_epi = pe.Node(
         fsl.ConvertXFM(invert_xfm=True),
         name='t1_to_epi')
+
+    n_mask_to_epi = pe.Node(
+        fsl.FLIRT(interp='nearestneighbour',
+                  out_file='%s_epi',
+                  apply_xfm=True,),
+        name='mask_to_epi')
     
     w=pe.Workflow(name=name)
 
@@ -465,6 +470,12 @@ def epi_normalize(name='epi_normalize'):
         (n_flirt_epi2t1,outputnode,[('out_matrix_file','epi2t1_warp')]),
         (n_flirt_epi2t1,n_t1_to_epi,[('out_matrix_file','in_file')]),
         (n_t1_to_epi,outputnode,[('out_file','t1_to_epi_warp')]),
+        (n_restrict_to_gray,n_t1_to_fmri,[('masked_rois','in_file')]),
+
+        (inputnode,n_mask_to_epi,[('fmri_reference','reference'),
+                                 ('t1_mask','in_file')]),
+        (n_t1_to_epi, n_mask_to_epi,[('out_file','in_matrix_file')]),
+        (n_mask_to_epi, outputnode, [('out_file','epi_mask')])
 #        (n_spm_coregister,outputnode,[('coregistered_source',
 #                                       'coregistered_fmri_mean')]),
         ])
