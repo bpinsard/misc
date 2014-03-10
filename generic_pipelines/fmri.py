@@ -292,6 +292,8 @@ def base_preproc(trim_realign=True,name='rsfmri_base_preproc'):
     
     n_realign = pe.Node(
         fsl.MCFLIRT(ref_vol=0,
+                    mean_vol=True,
+                    
                     save_plots=True,
                     save_rms=True,
                     save_mats=True,
@@ -899,4 +901,94 @@ def warp_rois_gray_fs(name='warp_rois_gray_fs'):
             (n_t1_to_fmri,outputnode,[('transformed_file','fmri_rois')]),
             (n_restrict_to_gray_fs,outputnode,[('masked_rois','t1_gray_rois')])
             ])
+    return w
+
+
+
+
+
+def base_preproc2(trim_realign=True,name='rsfmri_base_preproc'):
+
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['fmri','fmri_mask']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['preprocessed','mean','motion']),
+        name='outputspec')
+
+#    n_trim = pe.Node(
+#        interface=nipypp.Trim(begin_index=3),
+#        name='trim')
+    
+    n_realign = pe.Node(
+        fsl.MCFLIRT(ref_vol=0,
+                    save_plots=True,
+                    save_rms=True,
+                    save_mats=True,
+                    stats_imgs=True,),
+        name='realign')
+
+    n_mean = pe.Node(fsl.MeanImage(),name='mean')
+
+    n_mask_mean = pe.Node(
+        interface=fsl.ImageMaths(op_string='-mul', suffix='_brain',
+                                 output_type='NIFTI'),
+        name='mask_mean')
+
+    #linear with shear/scale in phase direction
+
+    n_smooth = pe.Node(
+        afni.BlurInMask(fwhm=5.0, out_file='%s_smooth', float_out=True),
+        name = 'smooth')    
+
+    n_bandpass_smooth = pe.Node(
+        afni.Bandpass(highpass=0.005, lowpass=999999,
+                      despike=True,
+                      blur=5.0, normalize=False, out_file='%s_filt.nii.gz'),
+        name='bandpass_smooth')
+
+    n_motion_filter = pe.Node(
+        interface = nipypp.RegressOutMotion(
+            motion_source='fsl',
+            regressors_type='voxelwise_translation',
+            global_signal = False,
+            prefix = 'mfilt_',
+            regressors_transform='original+bw_derivatives'),
+        name = 'motion_filter')
+
+
+    n_motion_estimates = pe.Node(
+        nipyutils.MotionEstimate(motion_source='fsl'),
+        name='motion_estimates')    
+
+    w=pe.Workflow(name=name)
+
+    if trim_realign:
+        w.connect([
+                (inputnode, n_realign, [('fmri','in_file')]),
+                (n_realign, n_motion_filter, [('out_file','in_file'),
+                                              ('par_file','motion')]),
+                (inputnode, n_motion_filter,[('fmri_mask','mask')]),
+                (n_motion_filter, n_bandpass_smooth, [('out_file','in_file')]),
+                (n_realign, n_mask_mean,  [('mean_img', 'in_file')]),
+                (n_realign, n_motion_estimates,[('par_file','motion')]),
+                (inputnode, n_motion_estimates,[('fmri_mask','mask')]),
+                (n_realign, outputnode, [('par_file','motion')]),
+                ])
+    else:
+        w.connect([
+                (inputnode, n_bandpass_smooth, [('fmri','in_file')]),
+                (inputnode, n_mean, [('fmri','in_file')]),
+                (n_mean, n_mask_mean, [('out_file', 'in_file')]),
+                ])
+
+    w.connect([
+        (inputnode, n_mask_mean,  [('fmri_mask', 'in_file2')]),
+        (inputnode, n_bandpass_smooth, [('fmri_mask','mask')]),
+        (n_bandpass_smooth, outputnode, [('out_file','preprocessed')]),
+        (n_mask_mean, outputnode, [('out_file','mean')]),
+
+      ])
     return w

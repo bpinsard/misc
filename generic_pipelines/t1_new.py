@@ -237,7 +237,8 @@ def fs_seg2mask(parc_file,out_file=None):
     from generic_pipelines.utils import fname_presuffix_basename
     nii = nb.load(parc_file)
     op = ((np.mgrid[:5,:5,:5]-2.0)**2).sum(0)<=4
-    mask = mask2=scipy.ndimage.binary_closing(nii.get_data()>0,op,iterations=2)
+    mask = scipy.ndimage.binary_closing(nii.get_data()>0,op,iterations=2)
+    scipy.ndimage.binary_fill_holes(mask,output=mask)
     if out_file==None:
         out_file=fname_presuffix_basename(parc_file,suffix='_mask')
     out_file = os.path.abspath(os.path.join(os.getcwd(),out_file))
@@ -326,13 +327,20 @@ def extract_wm_surface(name='extract_wm_surface'):
                                       smoothing_iterations=5),
         name='smooth_tesselation')
 
+    n_surf_decimate = pe.Node(
+        freesurfer.Decimate(decimation_level=.2),
+        name='surf_decimate')
+
     w = pe.Workflow(name=name)
     w.connect([
         (inputnode, n_extract_wm_regions, [('aseg','seg_file'),]),
         (n_extract_wm_regions, n_tesselate, [('wm_file','in_file'),]),
         (n_tesselate, n_wm_main_component, [('surface','in_file'),]),
         (n_wm_main_component, n_smooth_tessellation,[('out_file','in_file')]),
-        (n_smooth_tessellation, outputnode, [('surface','surface')])
+        (n_smooth_tessellation, n_surf_decimate, [('surface','in_file')]),
+        (n_smooth_tessellation, n_surf_decimate,
+         [(('surface',fname_presuffix_basename,'','_mask'), 'out_file')]),
+        (n_surf_decimate, outputnode, [('out_file','surface')]),
         ])
     return w
 
