@@ -18,6 +18,7 @@ class GrayOrdinatesBandPassSmoothInputSpec(BaseInterfaceInputSpec):
         exists=True, mandatory=True,
         desc="input hdf5 timeseries file")
     smoothing_steps = traits.Int(desc="smoothing extent")
+    smoothing_factor = traits.Float()
     data_field = traits.Str(
         'FMRI/DATA', usedefault=True,
         desc='the path of data to smooth in hdf5 file')
@@ -47,6 +48,7 @@ class GrayOrdinatesBandPassSmooth(BaseInterface):
         import surfer.utils as surfutils
         import scipy.sparse
         import scipy.signal
+        from cortex.polyutils import Surface
 
         in_ts = h5py.File(self.inputs.in_file, 'r')
         in_data = in_ts[self.inputs.data_field]
@@ -74,6 +76,8 @@ class GrayOrdinatesBandPassSmooth(BaseInterface):
                 sl = slice(attrs['IndexOffset'],
                            attrs['IndexOffset']+attrs['IndexCount'])
                 # TODO, move to real heat kernel on surfaces
+
+                """
                 adj_mat = surfutils.mesh_edges(
                     np.asarray(structs[st]['TRIANGLES']))
                 smooth_mat = surfutils.smoothing_matrix(
@@ -86,11 +90,22 @@ class GrayOrdinatesBandPassSmooth(BaseInterface):
 
                 sdata =  scipy.signal.detrend(
                     smooth_mat.dot(in_data[sl][good_voxels[sl]]),-1)
+                del smooth_mat
                 sdata -= sdata.mean(-1)[:,np.newaxis]
                 sdata /= sdata.std(-1)[:,np.newaxis]
                 sdata[np.isnan(sdata)] = 0
+                """
+                surf = Surface(in_ts['COORDINATES'][sl],
+                               structs[st]['TRIANGLES'])
+                sdata = np.empty((attrs['IndexCount'],in_data.shape[1]))
+                for fr in xrange(in_data.shape[1]):
+                    sdata[:,fr] = surf.smooth(in_data[:,fr],
+                                              self.inputs.smoothing_factor)
+                del surf
+                sdata -= sdata.mean(-1)[:,np.newaxis]
+                sdata /= sdata.std(-1)[:,np.newaxis]
                 out_data[sl] = sdata 
-                del smooth_mat
+                del sdata
             elif attrs['ModelType'] == 'VOXELS':
                 # voxsize should be stored at sampling for convenience
                 voxsize = 2.0 # could be anisotropic if necessary, see below
