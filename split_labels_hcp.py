@@ -12,7 +12,7 @@ lh_parc=nb.gifti.read('%s.L.aparc.a2009s.32k_fs_LR.label.gii'%path)
 lh_sphere=nb.gifti.read('%s.L.sphere.32k_fs_LR.surf.gii'%path)
 rois_size_max=128
 bins = np.bincount(lh_parc.darrays[0].data)[1:] # remove 0-labels
-nparts = np.ceil(bins/rois_size_max).astype(np.int)
+nparts = np.ceil(bins/float(rois_size_max)).astype(np.int)
 divs = np.c_[np.arange(1,lh_parc.darrays[0].data.max()+1), nparts]
 lh_nlabels = split_labels_hcp.split_label(
    lh_parc.darrays[0].data,
