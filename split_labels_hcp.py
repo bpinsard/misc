@@ -38,7 +38,7 @@ def split_label(labels, vertices, triangles, partitions):
             continue
         center = np.mean(vertices[verts_mask], axis=0)
         centered_points = vertices[verts_mask] - center
-        normal = center / scipy.linalg.norm(center)
+        normal = center / np.linalg.norm(center)
         # project all vertex coordinates on the tangential plane for this point
         q,_ = scipy.linalg.qr(normal[:, np.newaxis])
         tangent_u = q[:, 1:]
