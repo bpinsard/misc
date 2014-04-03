@@ -193,10 +193,12 @@ def fmri_surface_preproc(name='fmri_surface_preproc'):
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=inputs),
+        run_without_submitting = True,
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['timeseries','motion']),
+        run_without_submitting = True,
         name='outputspec')
 
     n_motion_corr = pe.MapNode(
