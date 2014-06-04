@@ -16,11 +16,13 @@ def dicom_convert_ppl(name='t1_dicom_cvt', crop_t1=True):
         utility.IdentityInterface(
             fields=['dicom_files','out_file_format',
                     'voxel_order','meta_force_add']),
+        run_without_submitting = True,
         name='inputspec')
 
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['t1_nifti']),
+        run_without_submitting = True,
         name='outputspec')
 
     n_convert_t1_dicom = pe.Node(
@@ -67,10 +69,12 @@ def t1_pipeline(name='t1_preproc'):
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=['t1_file']),
+        run_without_submitting = True,
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['mask','corrected_t1','corrected_t1_brain']),
+        run_without_submitting = True,
         name='outputspec')
 
     spm_path = spm.Info.version()['path']
@@ -250,6 +254,7 @@ def t1_freesurfer_pipeline(name='t1_preproc'):
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=['t1_file','subject_id']),
+        run_without_submitting = True,
         name='inputspec')
 
     n_freesurfer = pe.Node(
@@ -301,12 +306,13 @@ def extract_wm_surface(name='extract_wm_surface'):
     
     inputnode = pe.Node(
         utility.IdentityInterface(fields=['aseg']),
+        run_without_submitting = True,
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(fields=['surface']),
+        run_without_submitting = True,
         name='outputspec')
 
-        
     n_extract_wm_regions = pe.Node(
         utility.Function(
             input_names=['seg_file','rois_ids'],

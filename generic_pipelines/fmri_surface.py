@@ -193,10 +193,12 @@ def fmri_surface_preproc(name='fmri_surface_preproc'):
     inputnode = pe.Node(
         utility.IdentityInterface(
             fields=inputs),
+        run_without_submitting = True,
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['timeseries','motion']),
+        run_without_submitting = True,
         name='outputspec')
 
     n_motion_corr = pe.MapNode(
@@ -205,12 +207,14 @@ def fmri_surface_preproc(name='fmri_surface_preproc'):
             resampled_first_frame = 'frame1.nii.gz',
             boundary_sampling_distance=2),
         overwrite=False,
-        iterfield = ['dicom_files','fieldmap','fieldmap_reg','init_reg'],
+        iterfield = ['dicom_files',
+                     'fieldmap','fieldmap_reg','init_reg'],
         name = 'motion_correction')
 
     n_noise_corr = pe.MapNode(
         nipy.preprocess.OnlineFilter(poly_order=2),
-        iterfield = ['dicom_files','fieldmap','fieldmap_reg', 'motion'],
+        iterfield = ['dicom_files',
+                     'fieldmap','fieldmap_reg', 'motion'],
         overwrite=False,
         name = 'noise_correction')
 

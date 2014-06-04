@@ -29,8 +29,8 @@ def split_label(labels, vertices, triangles, partitions):
         if nparts == 0:
             continue
         if nparts == 1:
-            label_cnt += 1
             nlabels[labels==label] = label_cnt
+            label_cnt += 1
             continue
         verts_mask = labels==label
         nverts = np.count_nonzero(verts_mask)
@@ -59,11 +59,11 @@ def split_label(labels, vertices, triangles, partitions):
         cuts = np.percentile(proj,
                              (100*np.arange(1,nparts)/float(nparts)).tolist())
         label_a = np.empty(nverts, dtype=labels.dtype)
-        label_cnt += 1
         label_a.fill(label_cnt)
         for c in sorted(cuts):
             label_cnt += 1
             label_a[proj>c] = label_cnt
+        label_cnt += 1
         nlabels[verts_mask] = label_a
 
     return nlabels
