@@ -13,6 +13,7 @@ def dicom_convert_ppl(name='b0fm_dicom_cvt',mapnode=False):
         utility.IdentityInterface(
             fields=['dicom_files','out_file_format',
                     'voxel_order','meta_force_add']),
+        run_without_submitting = True,
         name='inputspec')
 
     klass = pe.Node
@@ -27,6 +28,7 @@ def dicom_convert_ppl(name='b0fm_dicom_cvt',mapnode=False):
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['fieldmap_file','magnitude_file']),
+        run_without_submitting = True,
         name='outputspec')
 
     w = pe.Workflow(name=name)
@@ -381,10 +383,12 @@ def make_t1_fieldmap(name='make_t1_fieldmap'):
         utility.IdentityInterface(
             fields=['complex_image','magnitude_image',
                     't1_mask','t1_mag', 'delta_TE']),
+        run_without_submitting = True,
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['fieldmap','fieldmap_mask']),
+        run_without_submitting = True,
         name='outputspec')
 
     n_fieldmap_to_t1 = pe.Node(
@@ -477,10 +481,12 @@ def make_fs_fieldmap(name='make_fs_fieldmap'):
             fields=['complex_image','magnitude_image',
                     'subject_id','freesurfer_subject_dir',
                     't1_mask', 'delta_TE']),
+        run_without_submitting = True,
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['fieldmap','fieldmap_mask']),
+        run_without_submitting = True,
         name='outputspec')
 
 
@@ -500,6 +506,7 @@ def make_fs_fieldmap(name='make_fs_fieldmap'):
         """
     n_reg_to_mni = pe.Node(
         freesurfer.preprocess.Tkregister(no_edit=True,xfm_out='%s_xfm.mat'),
+        run_without_submitting = True,
         name='reg_to_mni')
 
     n_resamp_complex = pe.Node(
