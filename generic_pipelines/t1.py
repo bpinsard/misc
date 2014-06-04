@@ -2,7 +2,7 @@ from nipype.interfaces import spm, fsl, afni, utility
 
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
-import nipype.workflows.rsfmri.spm as spmrest
+#import nipype.workflows.rsfmri.spm as spmrest
 import nipype.interfaces.nipy.utils as nipyutils
 import nipype.interfaces.nipy.preprocess as nipypp
 import nipype.utils.filemanip as fmanip
