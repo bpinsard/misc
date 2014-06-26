@@ -73,10 +73,13 @@ def split_label(labels, vertices, triangles, partitions):
 import nibabel as nb
 import nibabel.gifti
 import numpy as np
+import sys
+
 
 def surfparc2vol(
     lh_surf_file,rh_surf_file,lh_parc_file,rh_parc_file,parc_file,
     out_fname,
+    mask=None,
     rois_labels = [8, 10, 11, 12, 13, 16, 17, 18, # HCP rois labels
                    26, 28, 47, 49, 50, 51, 52, 53, 54, 58, 60]):
     
@@ -94,7 +97,10 @@ def surfparc2vol(
 
     parc = nb.load(parc_file)
     parc_data = parc.get_data()
-    wmgmvox = np.argwhere(parc_data>11000)
+    if mask is None:
+        wmgmvox = np.argwhere(parc_data>11000)
+    else:
+        wmgmvox = np.argwhere(mask)
     wmgmcoords = nb.affines.apply_affine(parc.get_affine(),
                                          wmgmvox).astype(np.float32)
     
@@ -105,9 +111,14 @@ def surfparc2vol(
         rois[parc_data==i] = i
 
     # set labels for cortical surfaces searching for nearest vertex
+    i=0
     for v,c in zip(wmgmvox,wmgmcoords):
+        i+=1
+        if i%1000==0:
+            sys.stdout.write(('\r%02.2f'%(100*i/float(len(wmgmvox))))+'% done')
+            sys.stdout.flush()
         rois[v[0],v[1],v[2]] = ctx_labels[
             np.argmin(((ctx_coords-c)**2).sum(1))]
 
-    nb.save(nb.Nifti1Image(rois, parc.get_affine()), out_fname)
+    nb.save(nb.Nifti1Image(rois, parc.get_affine(), parc.header), out_fname)
 
