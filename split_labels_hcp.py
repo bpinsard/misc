@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import scipy.linalg
 
@@ -24,15 +25,18 @@ def split_label(labels, vertices, triangles, partitions):
     nlabels = np.zeros(labels.shape, dtype=labels.dtype)
 
     label_cnt = 0 
+    if partitions[0][0] > 0:
+        label_cnt = 1
 
+    verts_mask=np.empty(labels.shape,dtype=np.bool)
     for label, nparts in partitions:
         if nparts == 0:
             continue
-        if nparts == 1:
-            nlabels[labels==label] = label_cnt
+        verts_mask[:] = labels==label
+        if nparts == 1 and label!=0:
+            nlabels[verts_mask] = label_cnt
             label_cnt += 1
             continue
-        verts_mask = labels==label
         nverts = np.count_nonzero(verts_mask)
         if nverts == 0:
             continue
@@ -56,6 +60,7 @@ def split_label(labels, vertices, triangles, partitions):
 
         # project the label on the axis
         proj = np.dot(vertices[verts_mask], axis)
+#        yield proj
         cuts = np.percentile(proj,
                              (100*np.arange(1,nparts)/float(nparts)).tolist())
         label_a = np.empty(nverts, dtype=labels.dtype)
@@ -122,3 +127,104 @@ def surfparc2vol(
 
     nb.save(nb.Nifti1Image(rois, parc.get_affine(), parc.header), out_fname)
 
+
+
+
+import numpy as np
+import nibabel.gifti
+import nibabel as nb
+import scipy.sparse
+import scipy.sparse.linalg
+
+
+"""
+lh_surf=nb.gifti.read('./100307/MNINonLinear/fsaverage_LR32k/100307.L.midthickness.32k_fs_LR.surf.gii')
+lh_parc=nb.gifti.read('./100307/MNINonLinear/fsaverage_LR32k/100307.L.aparc.a2009s.32k_fs_LR.label.gii')
+lh_parcd=lh_parc.darrays[0].data
+mask=lh_parcd==74
+"""
+
+def split_label_graph(verts,tris,labels,partitions):
+    nlabels = np.zeros(labels.shape, dtype=labels.dtype)
+    conn=scipy.sparse.coo_matrix((
+            np.ones(3*tris.shape[0]),
+            (np.hstack([tris[:,:2].T.ravel(),tris[:,1]]),
+             np.hstack([tris[:,1:].T.ravel(),tris[:,2]]))))
+    adj=(conn+conn.T>0).tocsr().astype(np.float32)
+
+    label_cnt = 0
+    
+    verts_mask=np.empty(labels.shape,dtype=np.bool)
+    for label, nparts in partitions:
+        if nparts == 0:
+            continue
+        verts_mask[:] = labels == label
+        nverts = np.count_nonzero(verts_mask)
+        if nverts == 0:
+            warnings.warn('zero vertices in a label', RuntimeWarning)
+            continue
+        if nparts ==1:
+            nlabels[verts_mask] = label_cnt
+            if  label!=0:
+                label_cnt += 1
+            continue
+        rois_avg_size = nverts / float(nparts)
+
+        roi_graph = adj[verts_mask][:,verts_mask]
+        lap = scipy.sparse.csgraph.laplacian(roi_graph)
+        neig = 5
+        elap = np.linalg.svd(np.asarray(lap.todense()))
+        null_thr = 1e-6
+        nullspace = elap[0][:,elap[1]<null_thr]
+        idx = np.squeeze(np.lexsort(nullspace.T))
+        comps = np.empty(nverts,dtype=np.int)
+#        return nullspace
+        comps[idx] = np.cumsum(
+            np.abs(np.ediff1d(nullspace.sum(1)[idx], to_begin=[0]))>1e-10)
+        ncomps = np.max(comps)+1
+        print '%d connected components in roi %d : %d parts'%(ncomps,label,nparts)
+        if ncomps > nparts :
+            raise RuntimeError('label %d:there are %d connected components for %d partitions only'%(label,ncomps,nparts))
+        elif ncomps < nparts:
+            comps_size = np.bincount(comps)
+            toobigcomps = comps_size > rois_avg_size
+            nsmallenough = (toobigcomps==0).sum()
+            sz = comps_size[toobigcomps].sum()/float(nparts-nsmallenough)
+            divs_float = np.ones(ncomps)
+            divs_float[toobigcomps] = (comps_size[toobigcomps]/sz)
+            divs_int = np.ceil(divs_float).astype(np.int)
+            xceedparts = divs_int.sum() - nparts
+            if xceedparts > 0:
+                divs_int[np.argsort(
+                        divs_float-divs_int+(toobigcomps==0))[:xceedparts]]-=1
+            subs = np.zeros(nverts, dtype=np.int)
+            nsub = 0
+            print divs_int
+            for i, divs in enumerate(divs_int):
+                subverts_mask = comps==i
+                if divs == 1:
+                    subs[subverts_mask] = nsub
+                    nsub += 1
+                    continue
+                subroi_graph = roi_graph[subverts_mask][:,subverts_mask]
+                lap = scipy.sparse.csgraph.laplacian(subroi_graph)
+                elap = np.linalg.svd(np.asarray(lap.todense()))
+                fiedler = elap[0][:,-2]
+                del elap
+                thresh_idx = np.round(comps_size[i]/divs*np.arange(divs)).astype(np.int)
+                thresh = np.sort(fiedler)[thresh_idx]
+                sub_mask = subverts_mask.copy()
+                for t in thresh:
+                    sub_mask[subverts_mask] = fiedler>=t
+                    subs[sub_mask] = nsub
+                    nsub += 1
+                cens = [verts[verts_mask][subs==j].mean(0) for j in range(nsub)]
+                #reord = ??
+                #subs = reord[subs] + label_cnt
+            subs += label_cnt
+            label_cnt += nsub
+        else:
+            subs = comps + label_cnt
+            label_cnt += ncomps
+        nlabels[verts_mask] = subs
+    return nlabels
