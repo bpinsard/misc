@@ -44,7 +44,7 @@ def split_label(labels, vertices, triangles, partitions):
         centered_points = vertices[verts_mask] - center
         normal = center / np.linalg.norm(center)
         # project all vertex coordinates on the tangential plane for this point
-        q,_ = scipy.linalg.qr(normal[:, np.newaxis],mode='complete')
+        q,_ = scipy.linalg.qr(normal[:, np.newaxis],mode='full')
         tangent_u = q[:, 1:]
         m_obs = np.dot(centered_points, tangent_u)
         # find principal eigendirection
