@@ -21,7 +21,7 @@ lh_nlabels = split_labels_hcp.split_label(
    lh_sphere.darrays[1].data,divs)
 """
 
-def split_label(labels, vertices, triangles, partitions):
+def split_label(labels, vertices, triangles, partitions, reord_subs = False):
     nlabels = np.zeros(labels.shape, dtype=labels.dtype)
 
     label_cnt = 0 
@@ -44,7 +44,7 @@ def split_label(labels, vertices, triangles, partitions):
         centered_points = vertices[verts_mask] - center
         normal = center / np.linalg.norm(center)
         # project all vertex coordinates on the tangential plane for this point
-        q,_ = scipy.linalg.qr(normal[:, np.newaxis])
+        q,_ = scipy.linalg.qr(normal[:, np.newaxis],mode='complete')
         tangent_u = q[:, 1:]
         m_obs = np.dot(centered_points, tangent_u)
         # find principal eigendirection
@@ -146,41 +146,98 @@ mask=lh_parcd==74
 
 def split_label_graph(verts,tris,labels,partitions):
     nlabels = np.zeros(labels.shape, dtype=labels.dtype)
-    conn=scipy.sparse.coo_matrix((
+    conn = scipy.sparse.coo_matrix((
             np.ones(3*tris.shape[0]),
             (np.hstack([tris[:,:2].T.ravel(),tris[:,1]]),
              np.hstack([tris[:,1:].T.ravel(),tris[:,2]]))))
-    adj=(conn+conn.T>0).tocsr().astype(np.float32)
+    adj = (conn+conn.T>0).tocsr().astype(np.float32)
 
     label_cnt = 0
     
-    verts_mask=np.empty(labels.shape,dtype=np.bool)
+    verts_mask = np.empty(labels.shape,dtype=np.bool)
     for label, nparts in partitions:
         if nparts == 0:
             continue
         verts_mask[:] = labels == label
+        points = verts[verts_mask]
         nverts = np.count_nonzero(verts_mask)
         if nverts == 0:
             warnings.warn('zero vertices in a label', RuntimeWarning)
             continue
-        if nparts ==1:
+        if nparts == 1:
             nlabels[verts_mask] = label_cnt
-            if  label!=0:
+            if  label != 0:
                 label_cnt += 1
             continue
         rois_avg_size = nverts / float(nparts)
 
+        ######## projection for main orientation of vertices
+        center = np.mean(points, axis=0)
+        centered_points = points - center
+        normal = center / np.linalg.norm(center)
+        q,_ = scipy.linalg.qr(normal[:, np.newaxis], mode='full')
+        tangent_u = q[:, 1:]
+        m_obs = np.dot(centered_points, tangent_u)
+        # find principal eigendirection
+        m_cov = np.dot(m_obs.T, m_obs)
+        w, vr = scipy.linalg.eig(m_cov)
+        i = np.argmax(w)
+        eigendir = vr[:, i]
+        # project back into 3d space
+        axis = np.dot(tangent_u, eigendir)
+        # orient them from posterior to anterior
+        if axis[1] < 0:
+            axis *= -1
+        # project the label on the axis
+        proj = np.dot(points, axis)
+
+        ######### connect single vertices to closest vertex
         roi_graph = adj[verts_mask][:,verts_mask]
-        lap = scipy.sparse.csgraph.laplacian(roi_graph)
-        neig = 5
-        elap = np.linalg.svd(np.asarray(lap.todense()))
-        null_thr = 1e-6
-        nullspace = elap[0][:,elap[1]<null_thr]
-        idx = np.squeeze(np.lexsort(nullspace.T))
-        comps = np.empty(nverts,dtype=np.int)
-#        return nullspace
-        comps[idx] = np.cumsum(
-            np.abs(np.ediff1d(nullspace.sum(1)[idx], to_begin=[0]))>1e-10)
+        unconn = np.where(np.asarray(roi_graph.sum(0)==0))[1]
+        if len(unconn) > 0:
+            print '%d unconnected vertices'%len(unconn)
+            unconn_coords = points[unconn]
+            nearest = np.argsort(
+                np.linalg.norm(
+                    unconn_coords[:,np.newaxis]-points[np.newaxis],
+                    axis=-1),axis=-1)[:,1]
+            print nearest
+            roi_graph[unconn,nearest] = 1
+            roi_graph[nearest,unconn] = 1
+
+        ########## connect small connected components to closest conn. comp.
+        while True:
+            lap = scipy.sparse.csgraph.laplacian(roi_graph)
+            neig = 5
+            elap = np.linalg.svd(np.asarray(lap.todense()))
+            null_thr = 1e-6
+            nullspace = elap[0][:,elap[1]<null_thr]
+            idx = np.squeeze(np.lexsort(nullspace.T))
+            comps = np.empty(nverts, dtype=np.int)
+
+            comps[idx] = np.cumsum(
+                np.abs(np.ediff1d(nullspace.sum(1)[idx], to_begin=[0]))>1e-10)
+            compcnts = np.bincount(comps)
+            print compcnts
+
+            small_comps = compcnts<rois_avg_size/2
+            if np.count_nonzero(small_comps)>0:
+                print 'small comps', compcnts
+                smallest = np.argmin(compcnts)
+                dists = np.linalg.norm(
+                    points[comps==smallest, np.newaxis]-\
+                        points[np.newaxis, comps!=smallest],
+                    axis=-1)
+                nearest = np.unravel_index(np.argmin(dists), dists.shape)
+                r = np.where(comps==smallest)[0][nearest[0]]
+                c = np.where(comps!=smallest)[0][nearest[1]]
+                print 'connect %d %d : %f'%(r,c,dists[nearest])
+                roi_graph[r,c] = 1
+                roi_graph[c,r] = 1
+            else:
+                break
+
+        print 'comps size', compcnts
         ncomps = np.max(comps)+1
         print '%d connected components in roi %d : %d parts'%(ncomps,label,nparts)
         if ncomps > nparts :
@@ -210,21 +267,28 @@ def split_label_graph(verts,tris,labels,partitions):
                 lap = scipy.sparse.csgraph.laplacian(subroi_graph)
                 elap = np.linalg.svd(np.asarray(lap.todense()))
                 fiedler = elap[0][:,-2]
+                if proj[subverts_mask].dot(fiedler) < 0:
+                    fiedler = -fiedler
                 del elap
-                thresh_idx = np.round(comps_size[i]/divs*np.arange(divs)).astype(np.int)
+                thresh_idx = np.round(
+                    comps_size[i]/divs*np.arange(divs)).astype(np.int)
                 thresh = np.sort(fiedler)[thresh_idx]
                 sub_mask = subverts_mask.copy()
                 for t in thresh:
                     sub_mask[subverts_mask] = fiedler>=t
                     subs[sub_mask] = nsub
                     nsub += 1
-                cens = [verts[verts_mask][subs==j].mean(0) for j in range(nsub)]
-                #reord = ??
-                #subs = reord[subs] + label_cnt
-            subs += label_cnt
-            label_cnt += nsub
         else:
-            subs = comps + label_cnt
-            label_cnt += ncomps
+            subs = comps
+            nsub = ncomps
+
+        #reorder for approximate correspondency between subjects ??!?
+        if reord_subs:
+            reord = np.argsort([np.median(proj[subs==i]) for i in range(nsub)])
+            print 'reord', [proj[subs==i].mean() for i in range(nsub)], reord
+            subs = reord[subs]            
+
+        subs += label_cnt
+        label_cnt += nsub
         nlabels[verts_mask] = subs
     return nlabels
