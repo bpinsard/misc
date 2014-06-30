@@ -21,7 +21,7 @@ lh_nlabels = split_labels_hcp.split_label(
    lh_sphere.darrays[1].data,divs)
 """
 
-def split_label(labels, vertices, triangles, partitions, reord_subs = False):
+def split_label(labels, vertices, triangles, partitions):
     nlabels = np.zeros(labels.shape, dtype=labels.dtype)
 
     label_cnt = 0 
@@ -144,7 +144,7 @@ lh_parcd=lh_parc.darrays[0].data
 mask=lh_parcd==74
 """
 
-def split_label_graph(verts,tris,labels,partitions):
+def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
     nlabels = np.zeros(labels.shape, dtype=labels.dtype)
     conn = scipy.sparse.coo_matrix((
             np.ones(3*tris.shape[0]),
@@ -155,12 +155,15 @@ def split_label_graph(verts,tris,labels,partitions):
     label_cnt = 0
     
     verts_mask = np.empty(labels.shape,dtype=np.bool)
+    stats = dict()
     for label, nparts in partitions:
+        stats[label] = dict()
         if nparts == 0:
             continue
         verts_mask[:] = labels == label
         points = verts[verts_mask]
         nverts = np.count_nonzero(verts_mask)
+        stats[label]['vertex_count'] = np.count_nonzero(verts_mask)
         if nverts == 0:
             warnings.warn('zero vertices in a label', RuntimeWarning)
             continue
@@ -194,6 +197,8 @@ def split_label_graph(verts,tris,labels,partitions):
         ######### connect single vertices to closest vertex
         roi_graph = adj[verts_mask][:,verts_mask]
         unconn = np.where(np.asarray(roi_graph.sum(0)==0))[1]
+        stats[label]['single_vertex'] = len(unconn)
+
         if len(unconn) > 0:
             print '%d unconnected vertices'%len(unconn)
             unconn_coords = points[unconn]
@@ -219,6 +224,8 @@ def split_label_graph(verts,tris,labels,partitions):
                 np.abs(np.ediff1d(nullspace.sum(1)[idx], to_begin=[0]))>1e-10)
             compcnts = np.bincount(comps)
             print compcnts
+            if not stats[label].has_key('compcnts'):
+                stats[label]['components_counts'] = compcnts
 
             small_comps = compcnts<rois_avg_size/2
             if np.count_nonzero(small_comps)>0:
@@ -291,4 +298,4 @@ def split_label_graph(verts,tris,labels,partitions):
         subs += label_cnt
         label_cnt += nsub
         nlabels[verts_mask] = subs
-    return nlabels
+    return nlabels, stats
