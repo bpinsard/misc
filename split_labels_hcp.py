@@ -262,11 +262,12 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
                     nsub += 1
                     continue
                 subroi_graph = roi_graph[subverts_mask][:,subverts_mask]
-                lap = scipy.sparse.csgraph.laplacian(subroi_graph, normed=True)
+                lap = scipy.sparse.csgraph.laplacian(subroi_graph)
                 elap = scipy.linalg.svd(np.asarray(lap.todense()))
                 fiedler = elap[0][:,-2]
                 if proj[subverts_mask].dot(fiedler) < 0:
                     fiedler = -fiedler
+#                yield fiedler, verts_mask, subverts_mask
                 del elap
                 thresh_idx = np.round(
                     compcnts[i]/divs*np.arange(divs)).astype(np.int)
