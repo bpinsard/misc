@@ -133,9 +133,9 @@ def surfparc2vol(
 import numpy as np
 import nibabel.gifti
 import nibabel as nb
-import scipy.sparse
+import scipy.sparse, scipy.linalg
 import scipy.sparse.linalg
-
+import networkx as nx
 
 """
 lh_surf=nb.gifti.read('./100307/MNINonLinear/fsaverage_LR32k/100307.L.midthickness.32k_fs_LR.surf.gii')
@@ -150,7 +150,8 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
             np.ones(3*tris.shape[0]),
             (np.hstack([tris[:,:2].T.ravel(),tris[:,1]]),
              np.hstack([tris[:,1:].T.ravel(),tris[:,2]]))))
-    adj = (conn+conn.T>0).tocsr().astype(np.float32)
+    adj = (conn+conn.T>0
+).tocsr().astype(np.float32)
 
     label_cnt = 0
     
@@ -211,24 +212,18 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
             roi_graph[(nearest,unconn)] = 1
 
         ########## connect small connected components to closest conn. comp.
+        comps = np.zeros(nverts, dtype=np.int)
         while True:
-            lap = scipy.sparse.csgraph.laplacian(roi_graph)
-            neig = 5
-            elap = np.linalg.svd(np.asarray(lap.todense()))
-            null_thr = 1e-6
-            nullspace = elap[0][:,elap[1]<null_thr]
-            idx = np.squeeze(np.lexsort(nullspace.T))
-            comps = np.empty(nverts, dtype=np.int)
-
-            comps[idx] = np.cumsum(
-                np.abs(np.ediff1d(nullspace.sum(1)[idx], to_begin=[0]))>1e-10)
-            compcnts = np.bincount(comps)
-            print compcnts
+            comps_lst = nx.connected_components(
+                nx.from_scipy_sparse_matrix(roi_graph))
+            compcnts = np.asarray([len(c) for c in comps_lst])
+            ncomps = len(comps_lst)
+            for i,c in enumerate(comps_lst): comps[c] = i
             if not stats[label].has_key('compcnts'):
                 stats[label]['components_counts'] = compcnts
 
             small_comps = compcnts<rois_avg_size/2
-            if np.count_nonzero(small_comps)>0:
+            if np.count_nonzero(small_comps)>0 or ncomps > nparts:
                 print 'small comps', compcnts
                 smallest = np.argmin(compcnts)
                 dists = np.linalg.norm(
@@ -245,17 +240,13 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
                 break
 
         print 'comps size', compcnts
-        ncomps = np.max(comps)+1
         print '%d connected components in roi %d : %d parts'%(ncomps,label,nparts)
-        if ncomps > nparts :
-            raise RuntimeError('label %d:there are %d connected components for %d partitions only'%(label,ncomps,nparts))
-        elif ncomps < nparts:
-            comps_size = np.bincount(comps)
-            toobigcomps = comps_size > rois_avg_size
+        if ncomps < nparts:
+            toobigcomps = compcnts > rois_avg_size
             nsmallenough = (toobigcomps==0).sum()
-            sz = comps_size[toobigcomps].sum()/float(nparts-nsmallenough)
+            sz = compcnts[toobigcomps].sum()/float(nparts-nsmallenough)
             divs_float = np.ones(ncomps)
-            divs_float[toobigcomps] = (comps_size[toobigcomps]/sz)
+            divs_float[toobigcomps] = (compcnts[toobigcomps]/sz)
             divs_int = np.ceil(divs_float).astype(np.int)
             xceedparts = divs_int.sum() - nparts
             if xceedparts > 0:
@@ -272,14 +263,14 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
                     continue
                 subroi_graph = roi_graph[subverts_mask][:,subverts_mask]
                 lap = scipy.sparse.csgraph.laplacian(subroi_graph)
-                elap = np.linalg.svd(np.asarray(lap.todense()))
+                elap = scipy.linalg.svd(np.asarray(lap.todense()))
                 fiedler = elap[0][:,-2]
                 if proj[subverts_mask].dot(fiedler) < 0:
                     fiedler = -fiedler
-                yield fiedler, verts_mask, subverts_mask
+#                yield fiedler, verts_mask, subverts_mask
                 del elap
                 thresh_idx = np.round(
-                    comps_size[i]/divs*np.arange(divs)).astype(np.int)
+                    compcnts[i]/divs*np.arange(divs)).astype(np.int)
                 thresh = np.sort(fiedler)[thresh_idx]
                 sub_mask = subverts_mask.copy()
                 for t in thresh:
