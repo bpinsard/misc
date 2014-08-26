@@ -207,8 +207,8 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
                     unconn_coords[:,np.newaxis]-points[np.newaxis],
                     axis=-1),axis=-1)[:,1]
             print nearest
-            roi_graph[unconn,nearest] = 1
-            roi_graph[nearest,unconn] = 1
+            roi_graph[(unconn,nearest)] = 1
+            roi_graph[(nearest,unconn)] = 1
 
         ########## connect small connected components to closest conn. comp.
         while True:
@@ -276,6 +276,7 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
                 fiedler = elap[0][:,-2]
                 if proj[subverts_mask].dot(fiedler) < 0:
                     fiedler = -fiedler
+                yield fiedler, verts_mask, subverts_mask
                 del elap
                 thresh_idx = np.round(
                     comps_size[i]/divs*np.arange(divs)).astype(np.int)
@@ -298,4 +299,4 @@ def split_label_graph(verts, tris, labels, partitions, reord_subs = False):
         subs += label_cnt
         label_cnt += nsub
         nlabels[verts_mask] = subs
-    return nlabels, stats
+#    return nlabels, stats
