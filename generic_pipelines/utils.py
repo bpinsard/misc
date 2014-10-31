@@ -46,13 +46,13 @@ def scan_switch(in_files,scan):
 
 
         
-def wildcard(p,s=slice(0,None)):
+def wildcard(p,s=slice(0,None),wc='*'):
     import os
     if isinstance(p,list):
         if isinstance(s,list):
-            return [os.path.join(p[i],'*') for i in s]
+            return [os.path.join(p[i],wc) for i in s]
         elif isinstance(s,slice):
-            return [os.path.join(pp,'*') for pp in p[s]]
+            return [os.path.join(pp,wc) for pp in p[s]]
         elif isinstance(s,int):
-            return os.path.join(p[s],'*')
-    return os.path.join(p,'*')
+            return os.path.join(p[s],wc)
+    return os.path.join(p,wc)
