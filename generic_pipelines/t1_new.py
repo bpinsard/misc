@@ -319,7 +319,8 @@ def extract_wm_surface(name='extract_wm_surface'):
             output_names=['wm_file'],
             function=extract_wm_regions),
         name='extract_wm_regions')
-    n_extract_wm_regions.inputs.rois_ids=[2,7,16,41,46, 251,252,253,254,255]
+    n_extract_wm_regions.inputs.rois_ids=[2,7,16,28,41,46,60, 251,252,253,254,255, # white matter, cc
+                                          10,49, 11,50, 12,51, 13,52] # subcortical whith low T2 contrast
 
     n_tesselate = pe.Node(
         freesurfer.MRITessellate(label_value=1),
