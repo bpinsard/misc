@@ -1,15 +1,15 @@
 import os
-from nipype.interfaces import spm, fsl, afni, nitime, dcm2nii, utility, lif, freesurfer
+from nipype.interfaces import spm, fsl, afni, nitime, dcm2nii, utility, freesurfer
  
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
-import nipype.workflows.rsfmri.spm as spmrest
+#import nipype.workflows.rsfmri.spm as spmrest
 import nipype.interfaces.nipy.utils as nipyutils
 import nipype.interfaces.nipy.preprocess as nipypp
 import nipype.algorithms.misc as algmisc
 import nipype.interfaces.dcmstack as np_dcmstack
 import nipype.utils.filemanip as fmanip
-import nipype.pipeline.file_proxy as fileproxy
+#import nipype.pipeline.file_proxy as fileproxy
 from .utils import *
 from nipype.interfaces.base import Undefined
 

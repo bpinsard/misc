@@ -1,7 +1,7 @@
 import os,sys,glob,datetime
 import numpy as np
 
-from nipype.interfaces import spm, fsl, afni, nitime, utility, lif, dcmstack as np_dcmstack, freesurfer, nipy, io as nio
+from nipype.interfaces import spm, fsl, afni, nitime, utility, dcmstack as np_dcmstack, freesurfer, nipy, io as nio
 
 import nipype.pipeline.engine as pe
 
