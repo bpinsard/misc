@@ -438,10 +438,10 @@ def epi_normalize(name='epi_normalize'):
         spm.Coregister(jobtype='estimate'),
         name='spm_coregister')
 
-    n_epi2mni = pe.Node(
-        spm.preprocess.ApplyDeformations(
-            reference_volume='/coconut/applis/src/spm8_x64/toolbox/Seg/TPM.nii'),
-        name='epi2mni')
+#    n_epi2mni = pe.Node(
+#        spm.preprocess.ApplyDeformations(
+#            reference_volume='/coconut/applis/src/spm8_x64/toolbox/Seg/TPM.nii'),
+#        name='epi2mni')
 
 
     n_flirt_epi2t1 = pe.Node(
