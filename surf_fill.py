@@ -1,4 +1,5 @@
 import numpy as np
+import nibabel as nb
 from tvtk.api import tvtk
 
 
@@ -20,19 +21,26 @@ def surf_fill(vertices, polys, mat, shape, voxel_size=None):
         mat_out[:3,3] = origin
     voxel_size2 = mat_out[:3,:3].dot(np.ones(3))
 
-    pd = tvtk.PolyData(points=vertices, polys=polys)
+    rot = mat_out[:3,:3].dot(np.diag(1/voxel_size2))
+    vertices2 = nb.affines.apply_affine(np.linalg.inv(mat),vertices)
+
+    print rot
+    print voxel_size2
+    print origin
+
+    pd = tvtk.PolyData(points=rot_vertices, polys=polys)
 
     whiteimg = tvtk.ImageData()
     whiteimg.spacing = voxel_size2
     whiteimg.dimensions = shape
     whiteimg.extent = (0,shape[0]-1, 0,shape[1]-1, 0,shape[2]-1)
-    whiteimg.origin = origin
+    whiteimg.origin = (0,0,0)
     whiteimg.scalar_type = 'unsigned_char'
     whiteimg.point_data.scalars = np.ones(np.prod(shape), dtype=np.uint8)
 
     pdtis = tvtk.PolyDataToImageStencil()
     pdtis.input = pd
-    pdtis.output_origin = origin
+    pdtis.output_origin = (0,0,0)
     pdtis.output_spacing = voxel_size2
     pdtis.output_whole_extent = whiteimg.extent
     pdtis.update()
@@ -46,7 +54,35 @@ def surf_fill(vertices, polys, mat, shape, voxel_size=None):
     data = imgstenc.output.point_data.scalars.to_array()
     return data.reshape(shape[::-1]).transpose(2,1,0), mat_out
 
-import nibabel as nb
+def surf_fill2(vertices, polys, mat, shape):
+
+    voxverts = nb.affines.apply_affine(np.linalg.inv(mat), vertices)
+
+    pd = tvtk.PolyData(points=voxverts, polys=polys)
+
+    whiteimg = tvtk.ImageData()
+    whiteimg.dimensions = shape
+#    whiteimg.extent = (0,shape[0]-1, 0,shape[1]-1, 0,shape[2]-1)
+#    whiteimg.origin = (0,0,0)
+    whiteimg.scalar_type = 'unsigned_char'
+    whiteimg.point_data.scalars = np.ones(np.prod(shape), dtype=np.uint8)
+
+    pdtis = tvtk.PolyDataToImageStencil()
+    pdtis.input = pd
+#    pdtis.output_origin = (0,0,0)
+#    pdtis.output_spacing = voxel_size2
+    pdtis.output_whole_extent = whiteimg.extent
+    pdtis.update()
+
+    imgstenc = tvtk.ImageStencil()
+    imgstenc.input = whiteimg
+    imgstenc.stencil = pdtis.output
+    imgstenc.background_value = 0
+    imgstenc.update()
+    
+    data = imgstenc.output.point_data.scalars.to_array().reshape(shape[::-1]).transpose(2,1,0)
+    return data
+
 import nibabel.gifti
 import scipy.ndimage
 
