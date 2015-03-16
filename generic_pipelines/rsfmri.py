@@ -1,7 +1,7 @@
 from nipype.interfaces import spm, fsl, afni, nitime, utility
 
 import nipype.pipeline.engine as pe
-#import nipype.pipeline.file_proxy as fileproxy
+import nipype.pipeline.file_proxy as fileproxy
 import nipype.interfaces.io as nio
 #import nipype.workflows.rsfmri.spm as spmrest
 import nipype.interfaces.nipy.utils as nipyutils

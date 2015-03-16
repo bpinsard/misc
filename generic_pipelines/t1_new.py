@@ -7,7 +7,7 @@ import nipype.interfaces.nipy.utils as nipyutils
 import nipype.interfaces.nipy.preprocess as nipypp
 import nipype.interfaces.dcmstack as np_dcmstack
 import nipype.utils.filemanip as fmanip
-#import nipype.pipeline.file_proxy as fileproxy
+import nipype.pipeline.file_proxy as fileproxy
 from .utils import *
 
 def dicom_convert_ppl(name='t1_dicom_cvt', crop_t1=True):

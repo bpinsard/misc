@@ -9,7 +9,7 @@ import nipype.interfaces.nipy.preprocess as nipypp
 import nipype.algorithms.misc as algmisc
 import nipype.interfaces.dcmstack as np_dcmstack
 import nipype.utils.filemanip as fmanip
-#import nipype.pipeline.file_proxy as fileproxy
+import nipype.pipeline.file_proxy as fileproxy
 from .utils import *
 from nipype.interfaces.base import Undefined
 
