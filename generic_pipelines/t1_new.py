@@ -100,7 +100,7 @@ def t1_pipeline(name='t1_preproc'):
         name='seg2mask')
 
     n_autobox_mask = pe.Node(
-        afni.Autobox(padding=3),
+        afni.Autobox(padding=3,out_name='%s_crop'),
         name='autobox_mask')
 
     n_merge_crop = pe.Node(
@@ -194,7 +194,8 @@ def t1_vbm_pipeline(name='t1_preproc'):
         name='seg2mask')
 
     n_autobox_mask = pe.Node(
-        afni.Autobox(padding=3),
+        afni.Autobox(padding=3,
+                     out_file='%s_crop'),
         name='autobox_mask')
 
     n_merge_crop = pe.Node(
