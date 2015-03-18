@@ -446,7 +446,7 @@ def epi_normalize(name='epi_normalize'):
 
     n_flirt_epi2t1 = pe.Node(
         fsl.FLIRT(out_matrix_file='flirt_epi2t1.mat',
-                  out_file='%.26s_flirt',
+                  out_file='%s_flirt',
                   cost='normmi', # as in fcon1000 preproc, why??
                   searchr_x=[-10,10],searchr_y=[-10,10],searchr_z=[-10,10],
                   dof=6),
