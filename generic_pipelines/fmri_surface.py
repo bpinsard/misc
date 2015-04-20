@@ -303,6 +303,16 @@ def wb_command_surface_resample(in_file,sphere_in,sphere_out,suffix):
     call(['wb_command', '-surface-resample', in_file,sphere_in,sphere_out, 'BARYCENTRIC',out_file])
     return out_file
 
+
+def wb_command_label_resample(in_file,sphere_in,sphere_out,suffix):
+    from subprocess import call
+    import os
+    from nipype.utils.filemanip import fname_presuffix
+    out_file = os.path.abspath(fname_presuffix(in_file,newpath='./',suffix=suffix))
+    call(['wb_command', '-label-resample', in_file, sphere_in, sphere_out, 'BARYCENTRIC', out_file])
+    return out_file
+
+
 def surface_32k(name='surface_32k'):
     w=pe.Workflow(name=name)
     
@@ -316,6 +326,7 @@ def surface_32k(name='surface_32k'):
         pial = [['subject','surf','?h.pial']],
         sphere = [['subject','surf','?h.sphere']],
         finalsurf = [['subject','mri','brain.finalsurfs.mgz']],
+        aparc_a2009s_annot = [['subject','label','?h.aparc.a2009s.annot']]
         )
 
     n_c_ras = pe.Node(
@@ -332,6 +343,11 @@ def surface_32k(name='surface_32k'):
     n_pial_to_gifti = n_white_to_gifti.clone('pial_to_gifti')
     n_sphere_to_gifti = n_white_to_gifti.clone('sphere_to_gifti')
 
+    n_labels_to_gifti = pe.MapNode(
+        freesurfer.MRIsConvert(out_datatype = 'gii'),
+        iterfield=['annot_file','in_file'],
+        name='labels_to_gifti')
+
     n_white_apply_affine = pe.MapNode(
         utility.Function(input_names=['in_file','c_ras'],
                          output_names=['out_file'],
@@ -342,7 +358,7 @@ def surface_32k(name='surface_32k'):
     n_pial_apply_affine = n_white_apply_affine.clone('pial_apply_affine')
 
     n_white_resample_surf = pe.MapNode(
-        utility.Function(input_names=['in_file','sphere_in','sphere_out','suffix'],
+         utility.Function(input_names=['in_file','sphere_in','sphere_out','suffix'],
                          output_names=['out_file'],
                          function=wb_command_surface_resample),
         iterfield = ['in_file','sphere_in','sphere_out'],
@@ -351,10 +367,22 @@ def surface_32k(name='surface_32k'):
     n_white_resample_surf.inputs.sphere_out = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
     n_pial_resample_surf = n_white_resample_surf.clone('pial_resample_surf')
 
+
+    n_label_resample = pe.MapNode(
+         utility.Function(input_names=['in_file','sphere_in','sphere_out','suffix'],
+                         output_names=['out_file'],
+                         function=wb_command_label_resample),
+        iterfield = ['in_file','sphere_in','sphere_out'],        
+        name='label_resample')
+    n_label_resample.inputs.suffix = '.32k'
+    n_label_resample.inputs.sphere_out = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
+
     w.connect([
             (n_fs_source,n_c_ras,[('finalsurf','mgz_file')]),
 
             (n_fs_source,n_white_to_gifti,[('white','in_file')]),
+            (n_fs_source,n_labels_to_gifti,[('white','in_file'),
+                                            ('aparc_a2009s_annot','annot_file')]),
             (n_fs_source,n_pial_to_gifti,[('pial','in_file')]),
             (n_fs_source,n_sphere_to_gifti,[('sphere','in_file')]),
 
@@ -367,6 +395,9 @@ def surface_32k(name='surface_32k'):
             (n_pial_apply_affine,n_pial_resample_surf,[('out_file','in_file')]),
             (n_sphere_to_gifti,n_white_resample_surf,[('converted','sphere_in')]),
             (n_sphere_to_gifti,n_pial_resample_surf,[('converted','sphere_in')]),
+
+            (n_sphere_to_gifti,n_label_resample,[('converted','sphere_in')]),
+            (n_labels_to_gifti,n_label_resample,[('converted','in_file')]),
             
             ])
     return w

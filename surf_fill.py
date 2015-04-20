@@ -86,6 +86,7 @@ def surf_fill2(vertices, polys, mat, shape):
 import nibabel.gifti
 import scipy.ndimage
 
+
 def hcp_5tt(parc_file, mask_file,
             lh_white, rh_white, lh_pial, rh_pial, subdiv=4):
     parc = nb.load(parc_file)
@@ -160,6 +161,99 @@ def hcp_5tt(parc_file, mask_file,
                           np.zeros(parc.shape+(1,),dtype=np.float32)],3)
 
     tt5[...,:lbs,:] = 0
+
+    tt5/=tt5.sum(-1)[...,np.newaxis]
+    tt5[np.isnan(tt5)]=0
+
+    return nb.Nifti1Image(tt5.astype(np.float32),parc.get_affine())
+
+
+def read_surf(fname, surf_ref):
+    if fname[-4:] == '.gii':
+        gii = nb.gifti.read(fname)
+        return gii.darrays[0].data, gii.darrays[1].data
+    else:
+        verts,tris =  nb.freesurfer.read_geometry(fname)
+        ras2vox = np.array([[-1,0,0,128],[0,0,-1,128],[0,1,0,128],[0,0,0,1]])
+        surf2world = surf_ref.get_affine().dot(ras2vox)
+        verts[:] = nb.affines.apply_affine(surf2world, verts)
+        return verts, tris
+
+def make_5tt(parc_file, mask_file,
+            lh_white, rh_white, lh_pial, rh_pial, subdiv=4):
+    parc = nb.load(parc_file)
+    mask = nb.load(mask_file)
+    mask_data = mask.get_data()
+    voxsize = np.asarray(parc.header.get_zooms()[:3])
+    parc_data = parc.get_data()
+    lh_wm = read_surf(lh_white, parc)
+    rh_wm = read_surf(rh_white, parc)
+    lh_gm = read_surf(lh_pial, parc)
+    rh_gm = read_surf(rh_pial, parc)
+
+    
+    def fill_hemis(lh_surf,rh_surf):
+        vertices = np.vstack([lh_surf[0],rh_surf[0]])
+        tris = np.vstack([lh_surf[1],
+                          rh_surf[1]+lh_surf[0].shape[0]])
+        pve_voxsize = voxsize/float(subdiv)
+        mat = parc.affine.dot(np.diag([1/float(subdiv)]*3+[1]))
+        shape = np.asarray(parc.shape)*subdiv
+        fill = surf_fill2(vertices, tris, mat, shape)
+        pve = reduce(
+            lambda x,y: x+fill[y[0]::subdiv,y[1]::subdiv,y[2]::subdiv],
+            np.mgrid[:subdiv,:subdiv,:subdiv].reshape(3,-1).T,0
+            ).astype(np.float32)
+        pve /= float(subdiv**3)
+        return pve
+    wm_pve = fill_hemis(lh_wm,rh_wm)
+    gm_pve = fill_hemis(lh_gm,rh_gm)
+    
+    def group_rois(rois_ids):
+        m = np.zeros(parc.shape, dtype=np.bool)
+        for i in rois_ids:
+            np.logical_or(parc_data==i, m, m)
+        return m
+        
+
+    gm_smooth = scipy.ndimage.gaussian_filter(
+        group_rois([8,47,17,18,53,54]).astype(np.float32),
+        sigma=voxsize)
+    subcort_smooth = scipy.ndimage.gaussian_filter(
+        group_rois([10,11,12,13,26,49,50,51,52,58]).astype(np.float32),
+        sigma=voxsize)
+    wm_smooth = scipy.ndimage.gaussian_filter(
+        group_rois([7,16,28,46,60,85,192,
+                    250,251,252,253,254,255]).astype(np.float32),
+        sigma=voxsize)
+
+    # remove csf at the end of brainstem for streamlines to medulla
+    # suppose hcp orientation storage
+    bs = (parc_data==16).any(-1).any(0)
+    lbs = np.where(bs)[0][-1]+3
+    outer_csf = np.logical_and(mask_data>0, parc_data==0)
+    outer_csf[...,lbs:,:] = 0
+    csf_smooth = scipy.ndimage.gaussian_filter(
+        np.logical_or(
+            group_rois([4,5,14,15,24,30,31,43,44,62,63,72]),
+            outer_csf).astype(np.float32),
+        sigma=voxsize)
+    csf_smooth[...,lbs:,:] = 0
+
+    wm =  wm_pve+wm_smooth-csf_smooth-subcort_smooth
+    wm[wm>1] = 1
+    wm[wm<0] = 0
+    
+    gm = gm_pve-wm_pve-wm-subcort_smooth+gm_smooth
+    gm[gm<0] = 0
+    
+    tt5 = np.concatenate([gm[...,np.newaxis],
+                          subcort_smooth[...,np.newaxis],
+                          wm[...,np.newaxis],
+                          csf_smooth[...,np.newaxis],
+                          np.zeros(parc.shape+(1,),dtype=np.float32)],3)
+
+    tt5[...,lbs:,:,:] = 0
 
     tt5/=tt5.sum(-1)[...,np.newaxis]
     tt5[np.isnan(tt5)]=0
