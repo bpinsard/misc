@@ -208,6 +208,7 @@ def make_5tt(parc_file, mask_file,
         return pve
     wm_pve = fill_hemis(lh_wm,rh_wm)
     gm_pve = fill_hemis(lh_gm,rh_gm)
+
     
     def group_rois(rois_ids):
         m = np.zeros(parc.shape, dtype=np.bool)
@@ -215,47 +216,81 @@ def make_5tt(parc_file, mask_file,
             np.logical_or(parc_data==i, m, m)
         return m
         
+    gm_rois = group_rois([8,47,17,18,53,54]).astype(np.float32)
+    gm_smooth = scipy.ndimage.gaussian_filter(gm_rois, sigma=voxsize)
 
-    gm_smooth = scipy.ndimage.gaussian_filter(
-        group_rois([8,47,17,18,53,54]).astype(np.float32),
-        sigma=voxsize)
-    subcort_smooth = scipy.ndimage.gaussian_filter(
-        group_rois([10,11,12,13,26,49,50,51,52,58]).astype(np.float32),
-        sigma=voxsize)
-    wm_smooth = scipy.ndimage.gaussian_filter(
-        group_rois([7,16,28,46,60,85,192,
-                    250,251,252,253,254,255]).astype(np.float32),
-        sigma=voxsize)
+    subcort_rois = group_rois([10,11,12,13,26,49,50,51,52,58]).astype(np.float32)
+    subcort_smooth = scipy.ndimage.gaussian_filter(subcort_rois, sigma=voxsize)
+    
+    wm_rois = group_rois([7,16,28,46,60,85,192,88,
+                         250,251,252,253,254,255]).astype(np.float32)
+
+    wm_smooth = scipy.ndimage.gaussian_filter(wm_rois,sigma=voxsize)
 
     # remove csf at the end of brainstem for streamlines to medulla
     # suppose hcp orientation storage
-    bs = (parc_data==16).any(-1).any(0)
-    lbs = np.where(bs)[0][-1]+3
-    outer_csf = np.logical_and(mask_data>0, parc_data==0)
-    outer_csf[...,lbs:,:] = 0
-    csf_smooth = scipy.ndimage.gaussian_filter(
-        np.logical_or(
-            group_rois([4,5,14,15,24,30,31,43,44,62,63,72]),
-            outer_csf).astype(np.float32),
-        sigma=voxsize)
-    csf_smooth[...,lbs:,:] = 0
+    bs_mask = parc_data==16
+    bs_vdc_dil = scipy.ndimage.morphology.binary_dilation(group_rois([16,60,28]), iterations=2)
+    # mask of boundary between brainstem and cerebellar gray matter
+    bs_vdc_excl = np.logical_and(bs_vdc_dil, np.logical_not(group_rois([16,7,46,60,28,10,49,2,41,0])))
 
-    wm =  wm_pve+wm_smooth-csf_smooth-subcort_smooth
+    lbs = np.where((bs_mask).any(-1).any(0))[0][-1]-3
+
+    parc_data_mask = parc_data>0
+    outer_csf = np.logical_and(
+        np.logical_not(parc_data_mask),
+        scipy.ndimage.morphology.binary_dilation(parc_data_mask))
+
+    ## create a fake GM rois at the end of brainstem for cerebro-spinal tracking
+    nb.save(nb.Nifti1Image(outer_csf.astype(np.int32),parc.affine),'outer_csf.nii')
+
+    csf_rois = group_rois([4,5,14,15,24,30,31,43,44,62,63,72])
+    nb.save(nb.Nifti1Image(csf_rois.astype(np.int32),parc.affine),'csf_rois.nii')
+
+    csf_smooth = scipy.ndimage.gaussian_filter(
+        np.logical_or(csf_rois, outer_csf).astype(np.float32),
+        sigma=voxsize)
+    nb.save(nb.Nifti1Image(csf_smooth,parc.affine),'csf_smooth.nii')
+
+
+    bs_roi = csf_smooth.copy()
+    bs_roi[...,:lbs,:] = 0 
+    csf_smooth[...,lbs:,:] = 0
+    wm_smooth[...,lbs:,:] = 0
+
+    # add csf around brainstem and ventral DC to remove direct connection to gray matter
+    csf_smooth[bs_vdc_excl] += gm_smooth[bs_vdc_excl]
+    gm_smooth[bs_vdc_excl] = 0
+
+    mask88 = parc_data==88    
+    print csf_smooth[mask88].sum(), subcort_smooth[mask88].sum()
+
+#    csf_smooth -= wm_smooth
+#    csf_smooth[csf_smooth<0]=0
+
+    nb.save(nb.Nifti1Image(wm_pve,parc.affine),'wm_pve.nii')
+    nb.save(nb.Nifti1Image(wm_smooth,parc.affine),'wm_smooth.nii')
+    nb.save(nb.Nifti1Image(subcort_smooth,parc.affine),'subcort_smooth.nii')
+
+    wm = wm_pve+wm_smooth-csf_smooth-subcort_smooth
     wm[wm>1] = 1
     wm[wm<0] = 0
+
+    print 267, np.count_nonzero(wm[mask88])
     
-    gm = gm_pve-wm_pve-wm-subcort_smooth+gm_smooth
+    gm = gm_pve-wm_pve-wm-subcort_smooth+gm_smooth+bs_roi
     gm[gm<0] = 0
+ 
     
+   
     tt5 = np.concatenate([gm[...,np.newaxis],
                           subcort_smooth[...,np.newaxis],
                           wm[...,np.newaxis],
                           csf_smooth[...,np.newaxis],
                           np.zeros(parc.shape+(1,),dtype=np.float32)],3)
 
-    tt5[...,lbs:,:,:] = 0
 
     tt5/=tt5.sum(-1)[...,np.newaxis]
     tt5[np.isnan(tt5)]=0
 
-    return nb.Nifti1Image(tt5.astype(np.float32),parc.get_affine())
+    return nb.Nifti1Image(tt5.astype(np.float32),parc.affine)

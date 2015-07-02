@@ -1005,3 +1005,48 @@ def base_preproc2(trim_realign=True,name='rsfmri_base_preproc'):
 
       ])
     return w
+
+def topup_epi(name='topup_epi', enc_dir=['x','x-']):
+    inputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['in_files','readout_time']),
+        name='inputspec')
+    outputnode = pe.Node(
+        utility.IdentityInterface(
+            fields=['field']),
+        name='outputspec')
+
+    n_cat_appa = pe.Node(
+        fsl.Merge(dimension='t'),
+        name='cat_appa')
+    
+    def get_enc_dir(files, dirs):
+        import nibabel as nb
+        return [d for f,d in zip(files,dirs) for i in range(nb.load(f).shape[3])]
+
+    def repeat_readout(in_file, readout_time):
+        import nibabel as nb
+        return [readout_time]*nb.load(in_file).shape[3]
+
+    n_readout_list = pe.Node(
+        utility.Function(
+            input_names=['in_file','readout_time'],
+            output_names=['readout_times'],
+            function=repeat_readout),
+        name='readout_list')
+
+    n_topup = pe.Node(
+        fsl.TOPUP(),
+        name='topup')
+    
+    w=pe.Workflow(name=name)
+
+    w.connect([
+        (inputnode, n_cat_appa,[('in_files',)*2]),
+        (n_cat_appa, n_topup,[('merged_file', 'in_file'),]),
+        (inputnode, n_topup,[(('in_files',get_enc_dir, enc_dir), 'encoding_direction'),]),
+        (inputnode, n_readout_list,[('readout_time',)*2]),
+        (n_cat_appa, n_readout_list,[('merged_file', 'in_file'),]),
+        (n_readout_list, n_topup,[('readout_times',)*2]),
+      ])
+    return w

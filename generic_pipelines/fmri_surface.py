@@ -1,7 +1,7 @@
 import os,sys,glob,datetime
 import numpy as np
 
-from nipype.interfaces import spm, fsl, afni, nitime, utility, dcmstack as np_dcmstack, freesurfer, nipy, io as nio
+from nipype.interfaces import spm, fsl, afni, nitime, utility, dcmstack as np_dcmstack, freesurfer, nipy, io as nio, ants
 
 import nipype.pipeline.engine as pe
 
@@ -282,6 +282,7 @@ def get_c_ras(mgz_file):
     import numpy as np
     mgz = nb.load(mgz_file)
     c_ras = np.eye(4)
+
     c_ras[:3,3] = mgz.header['Pxyz_c']
     out_fname = os.path.abspath('c_ras.txt')
     np.savetxt(out_fname ,c_ras,'%f')
@@ -303,13 +304,24 @@ def wb_command_surface_resample(in_file,sphere_in,sphere_out,suffix):
     call(['wb_command', '-surface-resample', in_file,sphere_in,sphere_out, 'BARYCENTRIC',out_file])
     return out_file
 
+def wb_command_sphere_project_unproject(
+    sphere_in,
+    sphere_project_to,
+    sphere_unproject_from,
+    suffix):
+    from subprocess import call
+    import os
+    from nipype.utils.filemanip import fname_presuffix
+    sphere_out = os.path.abspath(fname_presuffix(sphere_in,newpath='./',suffix=suffix))
+    call(['wb_command', '-surface-sphere-project-unproject', sphere_in, sphere_project_to, sphere_unproject_from,sphere_out])
+    return sphere_out
 
 def wb_command_label_resample(in_file,sphere_in,sphere_out,suffix):
     from subprocess import call
     import os
     from nipype.utils.filemanip import fname_presuffix
     out_file = os.path.abspath(fname_presuffix(in_file,newpath='./',suffix=suffix))
-    call(['wb_command', '-label-resample', in_file, sphere_in, sphere_out, 'BARYCENTRIC', out_file])
+    call(['wb_command', '-label-resample', in_file, sphere_in, sphere_out, 'BARYCENTRIC', out_file, '-largest'])
     return out_file
 
 
@@ -319,14 +331,17 @@ def surface_32k(name='surface_32k'):
     n_fs_source = pe.Node(
         nio.DataGrabber(infields=['subject'],
                         outfields=['white','pial','sphere','finalsurf'],
+                        raise_on_empty=False,
                         sort_filelist=True, template='%s/%s/%s'),
         name='fs_source')
     n_fs_source.inputs.template_args = dict(
         white = [['subject','surf','?h.white']],
         pial = [['subject','surf','?h.pial']],
-        sphere = [['subject','surf','?h.sphere']],
+        sphere = [['subject','surf','?h.sphere.reg']],
         finalsurf = [['subject','mri','brain.finalsurfs.mgz']],
-        aparc_a2009s_annot = [['subject','label','?h.aparc.a2009s.annot']]
+        aparc_a2009s_annot = [['subject','label','?h.aparc.a2009s.annot']],
+        ba_annot = [['subject','label','?h.BA_exvivo.annot']],
+        ba_thresh_annot = [['subject','label','?h.BA_exvivo.thresh.annot']]
         )
 
     n_c_ras = pe.Node(
@@ -335,18 +350,35 @@ def surface_32k(name='surface_32k'):
                          function=get_c_ras),
         name='c_ras')
     
-    
     n_white_to_gifti = pe.MapNode(
         freesurfer.MRIsConvert(out_datatype = 'gii'),
         iterfield = ['in_file'],
         name='white_to_gifti')
     n_pial_to_gifti = n_white_to_gifti.clone('pial_to_gifti')
     n_sphere_to_gifti = n_white_to_gifti.clone('sphere_to_gifti')
+ 
+    n_sphere_project_unproject = pe.MapNode(
+        utility.Function(
+            input_names=[
+                'sphere_in',
+                'sphere_project_to',
+                'sphere_unproject_from',
+                'suffix'],
+            output_names=['out_file'],
+            function=wb_command_sphere_project_unproject),
+        iterfield = ['sphere_in','sphere_project_to','sphere_unproject_from'],
+        name='sphere_project_unproject')
+
+    n_sphere_project_unproject.inputs.sphere_project_to = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/fs_%s/fsaverage.%s.sphere.164k_fs_%s.surf.gii'%(h,h,h) for h in 'LR']
+    n_sphere_project_unproject.inputs.sphere_unproject_from = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/fs_%s/fs_%s-to-fs_LR_fsaverage.%s_LR.spherical_std.164k_fs_%s.surf.gii'%(h,h,h,h) for h in 'LR']
+    n_sphere_project_unproject.inputs.suffix = '.proj_unproj'
 
     n_labels_to_gifti = pe.MapNode(
         freesurfer.MRIsConvert(out_datatype = 'gii'),
         iterfield=['annot_file','in_file'],
         name='labels_to_gifti')
+    n_ba_to_gifti = n_labels_to_gifti.clone('ba_to_gifti')
+    n_ba_thresh_to_gifti = n_labels_to_gifti.clone('ba_thresh_to_gifti')
 
     n_white_apply_affine = pe.MapNode(
         utility.Function(input_names=['in_file','c_ras'],
@@ -367,7 +399,6 @@ def surface_32k(name='surface_32k'):
     n_white_resample_surf.inputs.sphere_out = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
     n_pial_resample_surf = n_white_resample_surf.clone('pial_resample_surf')
 
-
     n_label_resample = pe.MapNode(
          utility.Function(input_names=['in_file','sphere_in','sphere_out','suffix'],
                          output_names=['out_file'],
@@ -377,27 +408,141 @@ def surface_32k(name='surface_32k'):
     n_label_resample.inputs.suffix = '.32k'
     n_label_resample.inputs.sphere_out = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
 
+    n_ba_resample = n_label_resample.clone('BA_resample')
+    n_ba_thresh_resample = n_label_resample.clone('BA_thresh_resample')
+
     w.connect([
             (n_fs_source,n_c_ras,[('finalsurf','mgz_file')]),
 
             (n_fs_source,n_white_to_gifti,[('white','in_file')]),
             (n_fs_source,n_labels_to_gifti,[('white','in_file'),
                                             ('aparc_a2009s_annot','annot_file')]),
+            (n_fs_source,n_ba_to_gifti,[('white','in_file'),
+                                        ('ba_annot','annot_file')]),
+            (n_fs_source,n_ba_thresh_to_gifti,[('white','in_file'),
+                                               ('ba_thresh_annot','annot_file')]),
+
             (n_fs_source,n_pial_to_gifti,[('pial','in_file')]),
             (n_fs_source,n_sphere_to_gifti,[('sphere','in_file')]),
+
+            (n_sphere_to_gifti,n_sphere_project_unproject,[('converted','sphere_in')]),
+
 
             (n_white_to_gifti,n_white_apply_affine,[('converted','in_file')]),
             (n_pial_to_gifti,n_pial_apply_affine,[('converted','in_file')]),
             (n_c_ras, n_white_apply_affine,[('c_ras',)*2]),
             (n_c_ras, n_pial_apply_affine,[('c_ras',)*2]),
 
+#           (n_white_to_gifti,n_white_resample_surf,[('converted','in_file')]),
+#           (n_pial_to_gifti,n_pial_resample_surf,[('converted','in_file')]),
             (n_white_apply_affine,n_white_resample_surf,[('out_file','in_file')]),
             (n_pial_apply_affine,n_pial_resample_surf,[('out_file','in_file')]),
-            (n_sphere_to_gifti,n_white_resample_surf,[('converted','sphere_in')]),
-            (n_sphere_to_gifti,n_pial_resample_surf,[('converted','sphere_in')]),
 
-            (n_sphere_to_gifti,n_label_resample,[('converted','sphere_in')]),
+            (n_sphere_project_unproject,n_white_resample_surf,[('out_file','sphere_in')]),
+            (n_sphere_project_unproject,n_pial_resample_surf,[('out_file','sphere_in')]),
+
+            (n_sphere_project_unproject,n_label_resample,[('out_file','sphere_in')]),
             (n_labels_to_gifti,n_label_resample,[('converted','in_file')]),
+
+            (n_sphere_project_unproject,n_ba_resample,[('out_file','sphere_in')]),
+            (n_sphere_project_unproject,n_ba_thresh_resample,[('out_file','sphere_in')]),
+
+            (n_ba_to_gifti,n_ba_resample,[('converted','in_file')]),
+            (n_ba_thresh_to_gifti,n_ba_thresh_resample,[('converted','in_file')]),
             
             ])
     return w
+
+
+def coords_ants2fs(in_file):
+    import numpy as np
+    import os
+    coords=np.loadtxt(in_file,skiprows=1,delimiter=',')
+    coords[:,:2]=-coords[:,:2]
+    out_file=os.path.abspath('atlas_coords_fs.csv')
+    np.savetxt(out_file, coords, 
+               header='x,y,z,r,s,t,l',
+               fmt='%f,%f,%f,%d,%d,%d,%d',
+               comments='',delimiter=',')
+    return out_file
+
+
+def ants_for_subcortical(name='ants_for_subcortical'):
+
+    input_node = pe.Node(
+        utility.IdentityInterface(fields=['t1','template','coords']),
+        name='inputspec')
+
+    n_ants_2mni = pe.Node(
+        ants.Registration(
+            output_warped_image = 'INTERNAL_WARPED.nii.gz',
+            output_transform_prefix = "anat2mni_",
+            transforms = ['Translation', 'Rigid', 'Affine', 'SyN'],
+            transform_parameters = [(0.1,), (0.1,), (0.1,), (0.2, 3.0, 0.0)],
+            number_of_iterations = ([[10000, 111110, 11110]]*3 + [[100, 50, 30]]),
+            dimension = 3,
+            num_threads=8,
+            write_composite_transform = True,
+            collapse_output_transforms = False,
+            metric = ['Mattes'] * 3 + [['Mattes', 'CC']],
+            metric_weight = [1] * 3 + [[0.5, 0.5]],
+            radius_or_number_of_bins = [32] * 3 + [[32, 4]],
+            sampling_strategy = ['Regular'] * 3 + [[None, None]],
+            sampling_percentage = [0.3] * 3 + [[None, None]],
+            convergence_threshold = [1.e-8] * 3 + [-0.01],
+            convergence_window_size = [20] * 3 + [5],
+            smoothing_sigmas = [[4, 2, 1]] * 3 + [[1, 0.5, 0]],
+            sigma_units = ['vox'] * 4,
+            shrink_factors = [[6, 4, 2]] + [[3, 2, 1]]*2 + [[4, 2, 1]],
+            use_estimate_learning_rate_once = [True] * 4,
+            use_histogram_matching = [False] * 3 + [True],
+            initial_moving_transform_com = True ),
+        name='ants_2mni')
+
+    n_warp_subctx = pe.Node(
+        ants.ApplyTransformsToPoints(
+            dimension=3,
+            invert_transform_flags=[False]),
+        name='warp_subctx')
+
+    n_coords_ants2fs = pe.Node(
+        utility.Function(
+            input_names = ['in_file'],
+            output_names = ['out_file'],
+            function = coords_ants2fs),
+        name='coords_ants2fs')
+
+    w = pe.Workflow(name=name)
+
+    w.connect([
+            (input_node, n_ants_2mni,[('template','fixed_image'),
+                                      ('t1','moving_image')]),
+            (n_ants_2mni, n_warp_subctx,[('composite_transform','transforms')]),
+            (input_node, n_warp_subctx,[('coords','input_file')]),
+            (n_warp_subctx, n_coords_ants2fs, [('output_file','in_file')]),
+            ])
+    return w
+
+
+def convert_motion_par(motion,epi2t1,matrix_file):
+    from os.path import abspath
+    import numpy as np 
+    import nibabel as nb
+    from nipy.algorithms.registration.affine import to_matrix44
+    from scipy.signal import medfilt
+    mot=np.loadtxt(motion)
+    mot=np.asarray([medfilt(p,3) for p in mot.T]).T
+    epi2t1reg=np.loadtxt(epi2t1)
+    reg=nb.load(matrix_file).affine
+    mats = np.array([epi2t1reg.dot(np.linalg.inv(to_matrix44(m)).dot(reg)) for m in mot for i in range(40)])
+    out_fname=abspath("motion.npy")
+    np.save(out_fname,mats)
+    return out_fname
+
+n_convert_motion_par = pe.MapNode(
+    utility.Function(
+        input_names = ['motion','epi2t1','matrix_file'],
+        output_names = ['motion'],
+        function=convert_motion_par),
+    iterfield=['motion','matrix_file','epi2t1'],
+    name='convert_motion_par')
