@@ -340,8 +340,8 @@ def surface_32k(name='surface_32k'):
         sphere = [['subject','surf','?h.sphere.reg']],
         finalsurf = [['subject','mri','brain.finalsurfs.mgz']],
         aparc_a2009s_annot = [['subject','label','?h.aparc.a2009s.annot']],
-        ba_annot = [['subject','label','?h.BA_exvivo.annot']],
-        ba_thresh_annot = [['subject','label','?h.BA_exvivo.thresh.annot']]
+        ba_annot = [['subject','label','?h.BA.annot']],
+        ba_thresh_annot = [['subject','label','?h.BA.thresh.annot']]
         )
 
     n_c_ras = pe.Node(
@@ -369,8 +369,8 @@ def surface_32k(name='surface_32k'):
         iterfield = ['sphere_in','sphere_project_to','sphere_unproject_from'],
         name='sphere_project_unproject')
 
-    n_sphere_project_unproject.inputs.sphere_project_to = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/fs_%s/fsaverage.%s.sphere.164k_fs_%s.surf.gii'%(h,h,h) for h in 'LR']
-    n_sphere_project_unproject.inputs.sphere_unproject_from = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/fs_%s/fs_%s-to-fs_LR_fsaverage.%s_LR.spherical_std.164k_fs_%s.surf.gii'%(h,h,h,h) for h in 'LR']
+    n_sphere_project_unproject.inputs.sphere_project_to = ['/scratch/bsl/src/Pipelines/global/templates/standard_mesh_atlases/fs_%s/fsaverage.%s.sphere.164k_fs_%s.surf.gii'%(h,h,h) for h in 'LR']
+    n_sphere_project_unproject.inputs.sphere_unproject_from = ['/scratch/bsl/src/Pipelines/global/templates/standard_mesh_atlases/fs_%s/fs_%s-to-fs_LR_fsaverage.%s_LR.spherical_std.164k_fs_%s.surf.gii'%(h,h,h,h) for h in 'LR']
     n_sphere_project_unproject.inputs.suffix = '.proj_unproj'
 
     n_labels_to_gifti = pe.MapNode(
@@ -396,7 +396,7 @@ def surface_32k(name='surface_32k'):
         iterfield = ['in_file','sphere_in','sphere_out'],
         name='white_resample_surf')
     n_white_resample_surf.inputs.suffix = '.32k'
-    n_white_resample_surf.inputs.sphere_out = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
+    n_white_resample_surf.inputs.sphere_out = ['/scratch/bsl/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
     n_pial_resample_surf = n_white_resample_surf.clone('pial_resample_surf')
 
     n_label_resample = pe.MapNode(
@@ -406,7 +406,7 @@ def surface_32k(name='surface_32k'):
         iterfield = ['in_file','sphere_in','sphere_out'],        
         name='label_resample')
     n_label_resample.inputs.suffix = '.32k'
-    n_label_resample.inputs.sphere_out = ['/home/bpinsard/data/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
+    n_label_resample.inputs.sphere_out = ['/scratch/bsl/src/Pipelines/global/templates/standard_mesh_atlases/%s.sphere.32k_fs_LR.surf.gii'%h for h in 'LR']
 
     n_ba_resample = n_label_resample.clone('BA_resample')
     n_ba_thresh_resample = n_label_resample.clone('BA_thresh_resample')
@@ -530,12 +530,14 @@ def convert_motion_par(motion,epi2t1,matrix_file):
     import nibabel as nb
     from nipy.algorithms.registration.affine import to_matrix44
     from scipy.signal import medfilt
-    mot=np.loadtxt(motion)
-    mot=np.asarray([medfilt(p,3) for p in mot.T]).T
-    epi2t1reg=np.loadtxt(epi2t1)
-    reg=nb.load(matrix_file).affine
-    mats = np.array([epi2t1reg.dot(np.linalg.inv(to_matrix44(m)).dot(reg)) for m in mot for i in range(40)])
-    out_fname=abspath("motion.npy")
+    mot = np.loadtxt(motion)
+    mot = np.asarray([medfilt(p,3) for p in mot.T]).T
+    epi2t1reg = np.loadtxt(epi2t1)
+    nii = nb.load(matrix_file)
+    reg = nii.affine
+    nslices = nii.shape[2]
+    mats = np.array([epi2t1reg.dot(np.linalg.inv(to_matrix44(m)).dot(reg)) for m in mot for i in range(nslices)])
+    out_fname = abspath("motion.npy")
     np.save(out_fname,mats)
     return out_fname
 
