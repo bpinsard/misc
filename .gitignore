@@ -1,35 +1,82 @@
-*.py[cod]
-
-# C extensions
-*.so
-
-# Packages
-*.egg
-*.egg-info
-dist
-build
-eggs
-parts
-bin
-var
-sdist
-develop-eggs
-.installed.cfg
-lib
-lib64
-
-# Installer logs
-pip-log.txt
-
-# Unit test / coverage reports
-.coverage
-.tox
-nosetests.xml
-
-# Translations
-*.mo
-
-# Mr Developer
-.mr.developer.cfg
+# Editor temporary/working/backup files #
+#########################################
+.#*
+[#]*#
+*~
+*$
+*.bak
+*.diff
+*.org
 .project
-.pydevproject
+*.rej
+.settings/
+.*.sw[nop]
+.sw[nop]
+*.tmp
+*.orig
+
+# Not sure what the next two are for
+*.kpf
+*-stamp
+
+# Compiled source #
+###################
+*.a
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.py[oc]
+*.so
+*.pyd
+
+# Packages #
+############
+# it's better to unpack these files and commit the raw source
+# git has its own built in compression methods
+*.7z
+*.bz2
+*.bzip2
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.tbz2
+*.tgz
+*.zip
+
+# Python files #
+################
+MANIFEST
+build/
+_build
+dist/
+*.egg-info
+.shelf/
+.tox/
+.coverage
+
+# Logs and databases #
+######################
+*.log
+*.sql
+*.sqlite
+
+# OS generated files #
+######################
+.gdb_history
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# Things specific to this project #
+###################################
+__config__.py
+doc/api/generated
+doc/build/
+doc/manual
+cythonize.dat

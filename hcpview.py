@@ -18,10 +18,14 @@ from mayavi.core.ui.api import SceneEditor, MlabSceneModel
 subjects_dir = '/home/bpinsard/softs/freesurfer/subjects'
 subject = 'fs32k_new'
 
+DEFAULT_LUT_MODE = 'RdBu'
+DEFAULT_LUT_REVERSE = True
+
 class HCPViewer():
 
     def __init__(self):
 
+        
 
         self._scalar_range = np.array([0,1])
 
@@ -37,6 +41,10 @@ class HCPViewer():
                 lh_surf.darrays[1].data,
                 lh_surf.darrays[1].data+lh_surf.darrays[0].data.shape[0]])
         self._surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], triangles)
+
+        self._surf.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
+        self._surf.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
+
         del coords, triangles
         
         rois_aparc = np.loadtxt(
@@ -56,6 +64,8 @@ class HCPViewer():
             mode='cube', scale_factor=2)
 
         self._pts.scene.background = (0.0, 0.0, 0.0)
+        self._pts.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
+        self._pts.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
 
         lut_path = os.path.join(os.environ['FREESURFER_HOME'], 'FreeSurferColorLUT.txt')
         lut_file = open(lut_path)
@@ -119,10 +129,13 @@ class HCPViewer():
 
     def set_range(self, scalar_range):
         self._scalar_range = np.asarray(scalar_range)
+        self._pts.scene.disable_render = True
         self._pts.module_manager.scalar_lut_manager.data_range = self._scalar_range
         self._surf.module_manager.scalar_lut_manager.data_range = self._scalar_range
         self._pts.glyph.glyph.range = self._scalar_range
+        self._pts.glyph.glyph.scale_factor = 1./self._scalar_range[1]
         #self._pts.glyph.glyph.clamping = True
+        self._pts.scene.disable_render = False
 
         
     def set_data(self, data):

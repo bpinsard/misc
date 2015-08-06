@@ -1006,19 +1006,47 @@ def base_preproc2(trim_realign=True,name='rsfmri_base_preproc'):
       ])
     return w
 
+
+def do_merge(in_files, pa_scan_name):
+    import nibabel as nb
+    import numpy as np
+    import os
+    from nipype.utils.filemanip import fname_presuffix
+    appa_pairs = []
+    for fi in range(len(in_files)):
+        if pa_scan_name in in_files[fi]:
+            appa_pairs.append((in_files[fi-1],in_files[fi]))
+    out_files = []
+    for ap, pa in appa_pairs:
+        ap_nii = nb.load(ap)
+        pa_nii = nb.load(pa)
+        appa_nii = nb.Nifti1Image(
+            np.concatenate([ap_nii.get_data()[...,-pa_nii.shape[-1]:],pa_nii.get_data()],-1),
+            ap_nii.get_affine())
+        out_file = fname_presuffix(pa, suffix='_appa', newpath=os.getcwd())
+        appa_nii.to_filename(out_file)
+        out_files.append(out_file)
+    return out_files
+
+def merge_appa():
+    n = pe.Node(
+        utility.Function(
+            input_names=['in_files','pa_scan_name'],
+            output_names=['out_files'],
+            function=do_merge),
+        name='merge_appa')
+    n.inputs.pa_scan_name = 'BOLD_PA'
+    return n
+
 def topup_epi(name='topup_epi', enc_dir=['x','x-']):
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=['in_files','readout_time']),
+            fields=['in_file','readout_time']),
         name='inputspec')
     outputnode = pe.Node(
         utility.IdentityInterface(
             fields=['field']),
         name='outputspec')
-
-    n_cat_appa = pe.Node(
-        fsl.Merge(dimension='t'),
-        name='cat_appa')
     
     def get_enc_dir(files, dirs):
         import nibabel as nb
