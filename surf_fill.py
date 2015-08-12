@@ -1,7 +1,7 @@
 import numpy as np
 import nibabel as nb
 from tvtk.api import tvtk
-
+from tvtk.common import is_old_pipeline
 
 def surf_fill(vertices, polys, mat, shape, voxel_size=None):
     
@@ -60,23 +60,33 @@ def surf_fill2(vertices, polys, mat, shape):
 
     pd = tvtk.PolyData(points=voxverts, polys=polys)
 
-    whiteimg = tvtk.ImageData()
-    whiteimg.dimensions = shape
-#    whiteimg.extent = (0,shape[0]-1, 0,shape[1]-1, 0,shape[2]-1)
-#    whiteimg.origin = (0,0,0)
-    whiteimg.scalar_type = 'unsigned_char'
+    if is_old_pipeline():
+        whiteimg = tvtk.ImageData(
+            dimensions = shape,
+            scalar_type = 'unsigned_char')
+    else:
+        whiteimg = tvtk.ImageData(
+            dimensions = shape)
     whiteimg.point_data.scalars = np.ones(np.prod(shape), dtype=np.uint8)
 
     pdtis = tvtk.PolyDataToImageStencil()
-    pdtis.input = pd
+    if is_old_pipeline():
+        pdtis.input = pd
+    else:
+        pdtis.set_input_data(pd)
+    
 #    pdtis.output_origin = (0,0,0)
 #    pdtis.output_spacing = voxel_size2
     pdtis.output_whole_extent = whiteimg.extent
     pdtis.update()
 
     imgstenc = tvtk.ImageStencil()
-    imgstenc.input = whiteimg
-    imgstenc.stencil = pdtis.output
+    if is_old_pipeline():
+        imgstenc.input = whiteimg
+        imgstenc.stencil = pdtis.output
+    else:
+        imgstenc.set_input_data(whiteimg)
+        imgstenc.set_stencil_data(pdtis.output)
     imgstenc.background_value = 0
     imgstenc.update()
     
