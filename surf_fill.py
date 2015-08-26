@@ -1,104 +1,9 @@
 import numpy as np
 import nibabel as nb
+import nibabel.gifti
+import scipy.ndimage
 
-def surf_fill(vertices, polys, mat, shape, voxel_size=None):
-    from tvtk.api import tvtk
-    
-    orig_voxel_size = np.sqrt((mat[:3,:3]**2).sum(0))
-    if voxel_size is None:
-        mat_out = mat
-        voxel_size = orig_voxel_size
-        origin = mat_out[:3,3]
-    else:
-        ratio = np.asarray(voxel_size)/orig_voxel_size
-        mat_out = mat.copy()
-        mat_out[:3,:3] = np.diag(ratio).dot(mat[:3,:3])
-        shapef = shape/ratio
-        shape = tuple(np.ceil(shapef).astype(np.int))
-        delta = (shape-shapef)/2.
-        origin = mat_out[:3,3]-mat_out[:3,:3].dot(np.diag(1./np.asarray(voxel_size))).dot(delta)
-        mat_out[:3,3] = origin
-    voxel_size2 = mat_out[:3,:3].dot(np.ones(3))
-
-    rot = mat_out[:3,:3].dot(np.diag(1/voxel_size2))
-    vertices2 = nb.affines.apply_affine(np.linalg.inv(mat),vertices)
-
-    print rot
-    print voxel_size2
-    print origin
-
-    pd = tvtk.PolyData(points=rot_vertices, polys=polys)
-
-    whiteimg = tvtk.ImageData()
-    whiteimg.spacing = voxel_size2
-    whiteimg.dimensions = shape
-    whiteimg.extent = (0,shape[0]-1, 0,shape[1]-1, 0,shape[2]-1)
-    whiteimg.origin = (0,0,0)
-    whiteimg.scalar_type = 'unsigned_char'
-    whiteimg.point_data.scalars = np.ones(np.prod(shape), dtype=np.uint8)
-
-    pdtis = tvtk.PolyDataToImageStencil()
-    pdtis.input = pd
-    pdtis.output_origin = (0,0,0)
-    pdtis.output_spacing = voxel_size2
-    pdtis.output_whole_extent = whiteimg.extent
-    pdtis.update()
-
-    imgstenc = tvtk.ImageStencil()
-    imgstenc.input = whiteimg
-    imgstenc.stencil = pdtis.output
-    imgstenc.background_value = 0
-    imgstenc.update()
-    
-    data = imgstenc.output.point_data.scalars.to_array()
-    return data.reshape(shape[::-1]).transpose(2,1,0), mat_out
-
-def surf_fill2(vertices, polys, mat, shape):
-    from tvtk.api import tvtk
-    from tvtk.common import is_old_pipeline
-
-    voxverts = nb.affines.apply_affine(np.linalg.inv(mat), vertices)
-
-    pd = tvtk.PolyData(points=voxverts, polys=polys)
-
-    if is_old_pipeline():
-        whiteimg = tvtk.ImageData(
-            dimensions = shape,
-            scalar_type = 'unsigned_char')
-    else:
-        whiteimg = tvtk.ImageData(
-            dimensions = shape)
-    whiteimg.point_data.scalars = np.ones(np.prod(shape), dtype=np.uint8)
-
-    pdtis = tvtk.PolyDataToImageStencil()
-    if is_old_pipeline():
-        pdtis.input = pd
-    else:
-        pdtis.set_input_data(pd)
-    
-#    pdtis.output_origin = (0,0,0)
-#    pdtis.output_spacing = voxel_size2
-    pdtis.output_whole_extent = whiteimg.extent
-    pdtis.update()
-
-    imgstenc = tvtk.ImageStencil()
-    if is_old_pipeline():
-        imgstenc.input = whiteimg
-        imgstenc.stencil = pdtis.output
-    else:
-        imgstenc.set_input_data(whiteimg)
-        imgstenc.set_stencil_data(pdtis.output)
-    imgstenc.background_value = 0
-    imgstenc.update()
-    
-    data = imgstenc.output.point_data.scalars.to_array().reshape(shape[::-1]).transpose(2,1,0)
-    return data
-
-
-
-
-# trying to remove dependencies to tvtk etc.... wip
-def surf_fill3(vertices, polys, mat, shape):
+def surf_fill_vtk(vertices, polys, mat, shape):
 
     import vtk
     from vtk.util import numpy_support
@@ -156,11 +61,6 @@ def surf_fill3(vertices, polys, mat, shape):
         imgstenc.GetOutput().GetPointData().GetScalars()).reshape(shape).transpose(2,1,0)
     del pd,voxverts,whiteimg,pdtis,imgstenc
     return data
-    
-
-import nibabel.gifti
-import scipy.ndimage
-
 
 def hcp_5tt(parc_file, mask_file,
             lh_white, rh_white, lh_pial, rh_pial, subdiv=4):
@@ -180,7 +80,7 @@ def hcp_5tt(parc_file, mask_file,
         tris = np.vstack([lh_surf.darrays[1].data,
                           rh_surf.darrays[1].data+lh_surf.darrays[0].dims[0]])
         pve_voxsize = voxsize/float(subdiv)
-        fill = surf_fill3(vertices, tris,
+        fill = surf_fill_vtk(vertices, tris,
                          parc.get_affine(), parc.shape, pve_voxsize)
         pve = reduce(
             lambda x,y: x+fill[0][y[0]::subdiv,y[1]::subdiv,y[2]::subdiv],
@@ -271,7 +171,7 @@ def make_5tt(parc_file, lh_white, rh_white, lh_pial, rh_pial, subdiv=4):
         pve_voxsize = voxsize/float(subdiv)
         mat = parc.affine.dot(np.diag([1/float(subdiv)]*3+[1]))
         shape = np.asarray(parc.shape)*subdiv
-        fill = surf_fill3(vertices, tris, mat, shape)
+        fill = surf_fill_vtk(vertices, tris, mat, shape)
         pve = reduce(
             lambda x,y: x+fill[y[0]::subdiv,y[1]::subdiv,y[2]::subdiv],
             np.mgrid[:subdiv,:subdiv,:subdiv].reshape(3,-1).T,0
