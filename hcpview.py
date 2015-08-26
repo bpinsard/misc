@@ -44,13 +44,14 @@ class HCPViewer():
 
         self._surf.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
         self._surf.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
+        self._surf.module_manager.scalar_lut_manager.use_default_range = False
 
         del coords, triangles
         
         rois_aparc = np.loadtxt(
             os.path.join(subjects_dir,subject,'label','Atlas_ROIs.csv'), 
             skiprows=1, delimiter=',')
-        cen = rois_aparc[:,:3].mean(0)
+        cen = np.vstack([rois_aparc[:,:3],lh_surf.darrays[0].data,rh_surf.darrays[0].data]).mean(0)
         uniqlabels = np.unique(rois_aparc[:,-1])
         coords = rois_aparc[:,:3].copy()
         coords[:,:2] = -coords[:,:2]
@@ -66,6 +67,7 @@ class HCPViewer():
         self._pts.scene.background = (0.0, 0.0, 0.0)
         self._pts.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
         self._pts.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
+        self._pts.module_manager.scalar_lut_manager.use_default_range = False
 
         lut_path = os.path.join(os.environ['FREESURFER_HOME'], 'FreeSurferColorLUT.txt')
         lut_file = open(lut_path)
@@ -101,7 +103,8 @@ class HCPViewer():
 
             surf.actor.property.color = self._lut[l][1]
             surf.actor.mapper.scalar_visibility = False
-
+            surf.actor.actor.position = [-3,3,3]
+            surf.name = self._lut[l][0]
             self._rois_surfaces.append(surf)
 
         """

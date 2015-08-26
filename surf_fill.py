@@ -1,9 +1,8 @@
 import numpy as np
 import nibabel as nb
-from tvtk.api import tvtk
-from tvtk.common import is_old_pipeline
 
 def surf_fill(vertices, polys, mat, shape, voxel_size=None):
+    from tvtk.api import tvtk
     
     orig_voxel_size = np.sqrt((mat[:3,:3]**2).sum(0))
     if voxel_size is None:
@@ -55,6 +54,8 @@ def surf_fill(vertices, polys, mat, shape, voxel_size=None):
     return data.reshape(shape[::-1]).transpose(2,1,0), mat_out
 
 def surf_fill2(vertices, polys, mat, shape):
+    from tvtk.api import tvtk
+    from tvtk.common import is_old_pipeline
 
     voxverts = nb.affines.apply_affine(np.linalg.inv(mat), vertices)
 
@@ -93,6 +94,69 @@ def surf_fill2(vertices, polys, mat, shape):
     data = imgstenc.output.point_data.scalars.to_array().reshape(shape[::-1]).transpose(2,1,0)
     return data
 
+
+
+
+# trying to remove dependencies to tvtk etc.... wip
+def surf_fill3(vertices, polys, mat, shape):
+
+    import vtk
+    from vtk.util import numpy_support
+
+    def mkVtkIdList(it):
+        vil = vtk.vtkIdList()
+        for i in it:
+            vil.InsertNextId(int(i))
+        return vil
+
+    voxverts = nb.affines.apply_affine(np.linalg.inv(mat), vertices)
+    points = vtk.vtkPoints()
+    points.SetNumberOfPoints(len(voxverts))
+    for i,pt in enumerate(voxverts):
+        points.InsertPoint(i, pt)
+#    pts.SetData(numpy_support.numpy_to_vtk(voxverts))
+
+    tris  = vtk.vtkCellArray()
+    for vert in polys:
+        tris.InsertNextCell(len(vert))
+        for v in vert:
+            tris.InsertCellPoint(v)
+
+    pd = vtk.vtkPolyData()
+    pd.SetPoints(points)
+    pd.SetPolys(tris)
+    del points, tris
+
+    whiteimg = vtk.vtkImageData()
+    whiteimg.SetDimensions(shape)
+    whiteimg.SetScalarType(vtk.VTK_UNSIGNED_CHAR)
+
+    ones = np.ones(np.prod(shape),dtype=np.uint8)
+    whiteimg.GetPointData().SetScalars(numpy_support.numpy_to_vtk(ones))
+    
+    pdtis = vtk.vtkPolyDataToImageStencil()
+    pdtis.SetInput(pd)
+
+    pdtis.SetOutputWholeExtent = whiteimg.GetExtent()
+    pdtis.Update()
+
+    imgstenc = vtk.vtkImageStencil()
+    imgstenc.SetInput(whiteimg)
+    if vtk.VTK_MAJOR_VERSION <= 5:
+        imgstenc.SetStencil(pdtis.GetOutput())
+    else:
+        imgstenc.SetStencilConnection(pdtis.GetOutputPort())
+    imgstenc.SetBackgroundValue(0)
+
+#    aa 
+    imgstenc.Update()
+    
+    data = numpy_support.vtk_to_numpy(
+        imgstenc.GetOutput().GetPointData().GetScalars()).reshape(shape).transpose(2,1,0)
+    del pd,voxverts,whiteimg,pdtis,imgstenc
+    return data
+    
+
 import nibabel.gifti
 import scipy.ndimage
 
@@ -115,7 +179,7 @@ def hcp_5tt(parc_file, mask_file,
         tris = np.vstack([lh_surf.darrays[1].data,
                           rh_surf.darrays[1].data+lh_surf.darrays[0].dims[0]])
         pve_voxsize = voxsize/float(subdiv)
-        fill = surf_fill(vertices, tris,
+        fill = surf_fill3(vertices, tris,
                          parc.get_affine(), parc.shape, pve_voxsize)
         pve = reduce(
             lambda x,y: x+fill[0][y[0]::subdiv,y[1]::subdiv,y[2]::subdiv],
@@ -189,11 +253,8 @@ def read_surf(fname, surf_ref):
         verts[:] = nb.affines.apply_affine(surf2world, verts)
         return verts, tris
 
-def make_5tt(parc_file, mask_file,
-            lh_white, rh_white, lh_pial, rh_pial, subdiv=4):
+def make_5tt(parc_file, lh_white, rh_white, lh_pial, rh_pial, subdiv=4):
     parc = nb.load(parc_file)
-    mask = nb.load(mask_file)
-    mask_data = mask.get_data()
     voxsize = np.asarray(parc.header.get_zooms()[:3])
     parc_data = parc.get_data()
     lh_wm = read_surf(lh_white, parc)
@@ -209,7 +270,7 @@ def make_5tt(parc_file, mask_file,
         pve_voxsize = voxsize/float(subdiv)
         mat = parc.affine.dot(np.diag([1/float(subdiv)]*3+[1]))
         shape = np.asarray(parc.shape)*subdiv
-        fill = surf_fill2(vertices, tris, mat, shape)
+        fill = surf_fill3(vertices, tris, mat, shape)
         pve = reduce(
             lambda x,y: x+fill[y[0]::subdiv,y[1]::subdiv,y[2]::subdiv],
             np.mgrid[:subdiv,:subdiv,:subdiv].reshape(3,-1).T,0
