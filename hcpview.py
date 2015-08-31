@@ -49,12 +49,12 @@ class HCPViewer():
         del coords, triangles
         
         rois_aparc = np.loadtxt(
-            os.path.join(subjects_dir,subject,'label','Atlas_ROIs.csv'), 
+            os.path.join(subjects_dir,subject,'label','Atlas_ROIs_new.csv'), 
             skiprows=1, delimiter=',')
+#        rois_aparc = rois_aparc[rois_aparc[:,-1]==8]
         cen = np.vstack([rois_aparc[:,:3],lh_surf.darrays[0].data,rh_surf.darrays[0].data]).mean(0)
         uniqlabels = np.unique(rois_aparc[:,-1])
         coords = rois_aparc[:,:3].copy()
-        coords[:,:2] = -coords[:,:2]
         cens = np.asarray([coords[rois_aparc[:,-1]==l].mean(0) for l in uniqlabels])
 
         for l,c in zip(uniqlabels, cens):
@@ -62,7 +62,7 @@ class HCPViewer():
 
         self._pts = mlab.points3d(
             coords[:,0], coords[:,1], coords[:,2],
-            mode='cube', scale_factor=2)
+            mode='cube', scale_factor=1)
 
         self._pts.scene.background = (0.0, 0.0, 0.0)
         self._pts.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
@@ -78,27 +78,14 @@ class HCPViewer():
                 self._lut[int(l[0])] = (l[1],tuple(float(c)/255. for c in l[2:5]))
         lut_file.close()
 
-
-        rois_mask_highres = nb.load(os.path.join(subjects_dir,subject,'mri','aparc.a2009s+aseg_restride.nii'))
-        surf_spacing = rois_mask_highres.get_header().get_zooms()
-        hr_mask = rois_mask_highres.get_data()
-
-        aw = np.argwhere(hr_mask>0)
-        awmin,awmax = aw.min(0)-1,aw.max(0)+1
-        awmin[awmin<0] = 0
-        awmax = np.min((awmax,hr_mask.shape),axis=0)
-        print awmin, awmax
-        self._bbox = [slice(l,t) for l,t in zip(awmin,awmax)]
-        del aw
-
-
-        giis=[nibabel.gifti.read(glob.glob('/home/bpinsard/data/tests/label2surf/giis/%d_*.gii'%l)[0]) for l in uniqlabels]
+        giis=[nibabel.gifti.read(glob.glob('/home/bpinsard/data/tests/label2surf/giis/%d_*ras.gii'%l)[0]) for l in uniqlabels]
 
         self._pts.scene.disable_render = True
         self._rois_surfaces = []
-        tr = np.asarray([[-1,0,0],[0,0,1],[0,-1,0]])
+#        tr = np.asarray([[-1,0,0],[0,0,1],[0,-1,0]])
         for l,g,cc in zip(uniqlabels, giis,cens):
-            coords=g.darrays[0].data+(cc-cen)*(-1,1,1)
+            coords=g.darrays[0].data+(cc-cen)#.dot(np.array([[-1,0,0],[0,0,1],[0,-1,0]]))##*(-1,1,1)
+#            coords=np.array([[-1,0,0],[0,0,1],[0,1,0]]).dot(coords)
             surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], g.darrays[1].data,opacity=.3)
 
             surf.actor.property.color = self._lut[l][1]

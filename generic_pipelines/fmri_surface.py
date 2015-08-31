@@ -454,18 +454,20 @@ def surface_32k(name='surface_32k', templates_dir='/home/bpinsard/data/src/Pipel
     return w
 
 
-def coords_ants2fs(in_file):
+# this function converts from itk world to nii world coords
+# the atlas file has already been mapped from nii to itk world space 
+# to be input of antsApplyTransformsToPoints
+def coords_itk2nii(in_file):
     import numpy as np
     import os
     coords=np.loadtxt(in_file,skiprows=1,delimiter=',')
     coords[:,:2]=-coords[:,:2]
-    out_file=os.path.abspath('atlas_coords_fs.csv')
+    out_file=os.path.abspath('atlas_coords_nii.csv')
     np.savetxt(out_file, coords, 
                header='x,y,z,r,s,t,l',
                fmt='%f,%f,%f,%d,%d,%d,%d',
-               comments='',delimiter=',')
+               delimiter=',')
     return out_file
-
 
 def ants_for_subcortical(name='ants_for_subcortical'):
 
@@ -505,12 +507,13 @@ def ants_for_subcortical(name='ants_for_subcortical'):
             invert_transform_flags=[False]),
         name='warp_subctx')
 
-    n_coords_ants2fs = pe.Node(
+    
+    n_coords_itk2nii = pe.Node(
         utility.Function(
             input_names = ['in_file'],
             output_names = ['out_file'],
-            function = coords_ants2fs),
-        name='coords_ants2fs')
+            function = coords_itk2nii),
+        name='coords_itk2nii')
 
     w = pe.Workflow(name=name)
 
@@ -519,7 +522,7 @@ def ants_for_subcortical(name='ants_for_subcortical'):
                                       ('t1','moving_image')]),
             (n_ants_2mni, n_warp_subctx,[('composite_transform','transforms')]),
             (input_node, n_warp_subctx,[('coords','input_file')]),
-            (n_warp_subctx, n_coords_ants2fs, [('output_file','in_file')]),
+            (n_warp_subctx, n_coords_itk2nii, [('output_file','in_file')]),
             ])
     return w
 
