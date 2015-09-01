@@ -96,26 +96,6 @@ class HCPViewer():
             surf.name = self._lut[l][0]
             self._rois_surfaces.append(surf)
 
-        """
-        for l,c in zip(uniqlabels, cens):
-            mask = (hr_mask == l)
-            aw = np.argwhere(mask)
-            awmin,awmax = aw.min(0),aw.max(0)
-            bbox = [slice(b,t) for b,t in zip(awmin,awmax)]
-            del aw
-            src = mlab.pipeline.scalar_field(mask[bbox].astype(np.uint8))
-            src.name = 'rois_%d'%l
-            surf = mlab.pipeline.iso_surface(
-                src, contours = [1], opacity=0.3)
-            surf.actor.property.color = self._lut[l][1]
-            surf.actor.mapper.scalar_visibility = False
-
-            surf.actor.actor.position = nb.affines.apply_affine(rois_mask_highres.get_affine(), awmin) + (cen - c)*[1,-1,-1]
-
-            surf.actor.actor.scale = surf_spacing
-            self._rois_surfaces.append(surf)
-            del mask
-            """
         self._pts.scene.disable_render = False
 
 
