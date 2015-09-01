@@ -68,6 +68,7 @@ class HCPViewer():
         self._pts.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
         self._pts.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
         self._pts.module_manager.scalar_lut_manager.use_default_range = False
+        self._pts.glyph.glyph.clamping = True
 
         lut_path = os.path.join(os.environ['FREESURFER_HOME'], 'FreeSurferColorLUT.txt')
         lut_file = open(lut_path)
@@ -78,7 +79,8 @@ class HCPViewer():
                 self._lut[int(l[0])] = (l[1],tuple(float(c)/255. for c in l[2:5]))
         lut_file.close()
 
-        giis=[nibabel.gifti.read(glob.glob('/home/bpinsard/data/tests/label2surf/giis/%d_*ras.gii'%l)[0]) for l in uniqlabels]
+        src_dir = os.path.dirname(os.path.realpath(__file__))
+        giis=[nibabel.gifti.read(glob.glob(os.path.join(src_dir,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in uniqlabels]
 
         self._pts.scene.disable_render = True
         self._rois_surfaces = []
@@ -86,11 +88,11 @@ class HCPViewer():
         for l,g,cc in zip(uniqlabels, giis,cens):
             coords=g.darrays[0].data+(cc-cen)#.dot(np.array([[-1,0,0],[0,0,1],[0,-1,0]]))##*(-1,1,1)
 #            coords=np.array([[-1,0,0],[0,0,1],[0,1,0]]).dot(coords)
-            surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], g.darrays[1].data,opacity=.3)
+            surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], g.darrays[1].data,opacity=.2)
 
             surf.actor.property.color = self._lut[l][1]
             surf.actor.mapper.scalar_visibility = False
-            surf.actor.actor.position = [-3,3,3]
+#            surf.actor.actor.position = [-3,3,3]
             surf.name = self._lut[l][0]
             self._rois_surfaces.append(surf)
 
