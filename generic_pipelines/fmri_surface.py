@@ -12,6 +12,7 @@ from generic_pipelines.utils import wrap, fname_presuffix_basename
 from nipype.interfaces.base import (TraitedSpec, BaseInterface, traits,
                     BaseInterfaceInputSpec, isdefined, File, Directory,
                     InputMultiPath, OutputMultiPath)
+from nipype.utils.filemanip import filename_to_list
 
 class GrayOrdinatesBandPassSmoothInputSpec(BaseInterfaceInputSpec):
     in_file = File(
@@ -520,7 +521,7 @@ def ants_for_subcortical(name='ants_for_subcortical'):
     w.connect([
             (input_node, n_ants_2mni,[('template','fixed_image'),
                                       ('t1','moving_image')]),
-            (n_ants_2mni, n_warp_subctx,[('composite_transform','transforms')]),
+            (n_ants_2mni, n_warp_subctx,[(('composite_transform',filename_to_list),'transforms')]),
             (input_node, n_warp_subctx,[('coords','input_file')]),
             (n_warp_subctx, n_coords_itk2nii, [('output_file','in_file')]),
             ])

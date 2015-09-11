@@ -25,7 +25,7 @@ class HCPViewer():
 
     def __init__(self):
 
-        
+        src_dir = os.path.dirname(os.path.realpath(__file__))        
 
         self._scalar_range = np.array([0,1])
 
@@ -49,12 +49,13 @@ class HCPViewer():
         del coords, triangles
         
         rois_aparc = np.loadtxt(
-            os.path.join(subjects_dir,subject,'label','Atlas_ROIs_new.csv'), 
+            os.path.join(src_dir,'data','Atlas_ROIs.csv'), 
             skiprows=1, delimiter=',')
 #        rois_aparc = rois_aparc[rois_aparc[:,-1]==8]
         cen = np.vstack([rois_aparc[:,:3],lh_surf.darrays[0].data,rh_surf.darrays[0].data]).mean(0)
         uniqlabels = np.unique(rois_aparc[:,-1])
         coords = rois_aparc[:,:3].copy()
+        coords[:,:2] =- coords[:,:2]
         cens = np.asarray([coords[rois_aparc[:,-1]==l].mean(0) for l in uniqlabels])
 
         for l,c in zip(uniqlabels, cens):
@@ -79,7 +80,6 @@ class HCPViewer():
                 self._lut[int(l[0])] = (l[1],tuple(float(c)/255. for c in l[2:5]))
         lut_file.close()
 
-        src_dir = os.path.dirname(os.path.realpath(__file__))
         giis=[nibabel.gifti.read(glob.glob(os.path.join(src_dir,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in uniqlabels]
 
         self._pts.scene.disable_render = True
