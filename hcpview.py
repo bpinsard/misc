@@ -15,24 +15,40 @@ from mayavi import mlab
 from mayavi.core.api import PipelineBase, Source
 from mayavi.core.ui.api import SceneEditor, MlabSceneModel
 
+from matplotlib.cm import get_cmap
+from matplotlib import pyplot
+
 subjects_dir = '/home/bpinsard/softs/freesurfer/subjects'
 subject = 'fs32k_new'
+DEFAULT_SURF = 'inflated.32k'
+DEFAULT_CURV = 'curv.32k'
 
+DEFAULT_BG_LUT_MODE = 'Greys'
 DEFAULT_LUT_MODE = 'RdBu'
+DEFAULT_LUT_TABLE = get_cmap('viridis')(np.linspace(0., 1., 256))*255
+DEFAULT_LUT_TABLE[0,-1] = 0 # transparent
 DEFAULT_LUT_REVERSE = True
 
 class HCPViewer():
 
-    def __init__(self):
+    def __init__(self,
+                 surf=DEFAULT_SURF,
+                 lut_mode=DEFAULT_LUT_MODE, lut_reverse=DEFAULT_LUT_REVERSE,
+                 bg_lut_mode=DEFAULT_BG_LUT_MODE):
 
         src_dir = os.path.dirname(os.path.realpath(__file__))        
 
+        mlab.figure(size=(1000,1000))
         self._scalar_range = np.array([0,1])
 
-        lh_surf = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','lh.white.smoothed.32k.gii'))
-        rh_surf = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','rh.white.smoothed.32k.gii'))
+        lh_surf = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','lh.%s.gii'%surf))
+        rh_surf = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','rh.%s.gii'%surf))
         
-        shift = np.asarray([100,0,0])
+        lh_curv = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','lh.%s.gii'%DEFAULT_CURV))
+        rh_curv = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','rh.%s.gii'%DEFAULT_CURV))
+        self._curv = np.hstack([lh_curv.darrays[0].data,rh_curv.darrays[0].data])
+        
+        shift = np.asarray([110,0,0])
         coords = np.vstack([
                 lh_surf.darrays[0].data-shift,
                 rh_surf.darrays[0].data+shift
@@ -40,11 +56,18 @@ class HCPViewer():
         triangles = np.vstack([
                 lh_surf.darrays[1].data,
                 lh_surf.darrays[1].data+lh_surf.darrays[0].data.shape[0]])
-        self._surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], triangles)
+        self._bg_surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], triangles)
+        self._bg_surf.mlab_source.scalars = self._curv
+        self._bg_surf.module_manager.scalar_lut_manager.lut_mode = bg_lut_mode
 
-        self._surf.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
-        self._surf.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
+        self._surf = mlab.triangular_mesh(coords[:,0], coords[:,1], coords[:,2], triangles)
+        self._scene = self._surf.scene
+
+        self._surf.module_manager.scalar_lut_manager.lut.table = DEFAULT_LUT_TABLE
+#        self._surf.module_manager.scalar_lut_manager.lut_mode = lut_mode
+#        self._surf.module_manager.scalar_lut_manager.reverse_lut = lut_reverse
         self._surf.module_manager.scalar_lut_manager.use_default_range = False
+        self._surf.module_manager.scalar_lut_manager.lut.nan_color = [ 0.5,  0.5,  0.5,  0]
 
         del coords, triangles
         
@@ -65,9 +88,10 @@ class HCPViewer():
             coords[:,0], coords[:,1], coords[:,2],
             mode='cube', scale_factor=1)
 
-        self._pts.scene.background = (0.0, 0.0, 0.0)
-        self._pts.module_manager.scalar_lut_manager.lut_mode = DEFAULT_LUT_MODE
-        self._pts.module_manager.scalar_lut_manager.reverse_lut = DEFAULT_LUT_REVERSE
+        self._scene.background = (0.0, 0.0, 0.0)
+        self._pts.module_manager.scalar_lut_manager.lut.table = DEFAULT_LUT_TABLE
+#        self._pts.module_manager.scalar_lut_manager.lut_mode = lut_mode
+#        self._pts.module_manager.scalar_lut_manager.reverse_lut = lut_reverse
         self._pts.module_manager.scalar_lut_manager.use_default_range = False
         self._pts.glyph.glyph.clamping = True
 
@@ -82,7 +106,7 @@ class HCPViewer():
 
         giis=[nibabel.gifti.read(glob.glob(os.path.join(src_dir,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in uniqlabels]
 
-        self._pts.scene.disable_render = True
+        self._scene.disable_render = True
         self._rois_surfaces = []
 #        tr = np.asarray([[-1,0,0],[0,0,1],[0,-1,0]])
         for l,g,cc in zip(uniqlabels, giis,cens):
@@ -96,18 +120,18 @@ class HCPViewer():
             surf.name = self._lut[l][0]
             self._rois_surfaces.append(surf)
 
-        self._pts.scene.disable_render = False
+        self._scene.disable_render = False
 
 
     def set_range(self, scalar_range):
         self._scalar_range = np.asarray(scalar_range)
-        self._pts.scene.disable_render = True
+        self._scene.disable_render = True
         self._pts.module_manager.scalar_lut_manager.data_range = self._scalar_range
         self._surf.module_manager.scalar_lut_manager.data_range = self._scalar_range
         self._pts.glyph.glyph.range = self._scalar_range
-        self._pts.glyph.glyph.scale_factor = 1./self._scalar_range[1]
+        self._pts.glyph.glyph.scale_factor = 1.0+1/float(self._scalar_range[1])
         #self._pts.glyph.glyph.clamping = True
-        self._pts.scene.disable_render = False
+        self._scene.disable_render = False
 
         
     def set_data(self, data):
@@ -123,10 +147,67 @@ class HCPViewer():
             raise ValueError
         
     def _update(self, data):
-        self._pts.scene.disable_render = True
+        self._scene.disable_render = True
         self._surf.mlab_source.scalars = data[:2*32492]
         self._pts.mlab_source.scalars = data[2*32492:]
         self.set_range(self._scalar_range)
-        self._pts.scene.disable_render = False
+        self._scene.disable_render = False
                 
         
+    def montage_screenshot(self,zoom=1.5):
+        self._scene.disable_render = True
+        # hide subcortical
+        subcortical_objects = [self._pts]+self._rois_surfaces
+        for el in subcortical_objects:
+            el.visible = False
+        self._scene.disable_render = False
+        ## screenshot
+        self._scene.parallel_projection = True
+        self._scene.x_minus_view()
+        self._scene.camera.view_up=[0,1,0]
+        self._scene.camera.zoom(zoom)
+        self._scene.render()
+        lh_lat = mlab.screenshot()
+        l,r=np.where(lh_lat.sum(-1).sum(0))[0][[0,-1]]+[-10,10]
+        lh_lat = lh_lat[:,l:r]
+        self._scene.x_plus_view()
+        self._scene.camera.view_up=[0,1,0]
+        self._scene.camera.zoom(zoom)
+        self._scene.render()
+        rh_lat = mlab.screenshot()
+        l,r=np.where(rh_lat.sum(-1).sum(0))[0][[0,-1]]+[-10,10]
+        rh_lat = rh_lat[:,l:r]
+
+        self._scene.disable_render = True
+        for el in subcortical_objects:
+            el.visible = True
+        self._scene.disable_render = False
+
+        self._scene.z_plus_view()
+        self._scene.camera.zoom(zoom)
+        self._scene.render()
+        lrh_sup = mlab.screenshot()
+
+
+        self._scene.parallel_projection = False
+        montage = np.hstack([lh_lat,lrh_sup,rh_lat])
+        return montage
+
+        
+
+def plot_montage(image, color_range):
+    
+    fig, axes = pyplot.subplots(
+        1,2,
+        gridspec_kw=dict(width_ratios=[.98,.02], left=0, wspace=0))
+    axes[0].imshow(image)
+    axes[0].set_xticks([])
+    axes[0].set_yticks([])
+    pyplot.matplotlib.colorbar.ColorbarBase(
+        axes[1],
+        cmap=pyplot.cm.viridis,
+        norm=pyplot.matplotlib.colors.Normalize(vmin=0, vmax=pyplot.cm.viridis.N),
+        orientation='vertical',
+        ticks=np.linspace(0,255,color_range[1]-color_range[0]+1))
+    axes[1].set_xticks([])
+    axes[1].set_yticklabels(np.arange(color_range[0],color_range[1]+1))

@@ -79,7 +79,7 @@ import nibabel as nb
 import nibabel.gifti
 import numpy as np
 import sys
-
+from scipy.spatial import KDTree
 
 def surfparc2vol(
     lh_surf_file,rh_surf_file,lh_parc_file,rh_parc_file,parc_file,
@@ -103,9 +103,8 @@ def surfparc2vol(
     parc = nb.load(parc_file)
     parc_data = parc.get_data()
     if mask is None:
-        wmgmvox = np.argwhere(parc_data>11000)
-    else:
-        wmgmvox = np.argwhere(mask)
+        mask = parc_data>11000
+    wmgmvox = np.argwhere(mask)
     wmgmcoords = nb.affines.apply_affine(parc.get_affine(),
                                          wmgmvox).astype(np.float32)
     
@@ -117,13 +116,9 @@ def surfparc2vol(
 
     # set labels for cortical surfaces searching for nearest vertex
     i=0
-    for v,c in zip(wmgmvox,wmgmcoords):
-        i+=1
-        if i%1000==0:
-            sys.stdout.write(('\r%02.2f'%(100*i/float(len(wmgmvox))))+'% done')
-            sys.stdout.flush()
-        rois[v[0],v[1],v[2]] = ctx_labels[
-            np.argmin(((ctx_coords-c)**2).sum(1))]
+    kdtree = KDTree(ctx_coords)
+    dist,idx=kdtree.query(wmgmcoords)
+    rois[mask] = ctx_labels[idx]
 
     nb.save(nb.Nifti1Image(rois, parc.get_affine(), parc.header), out_fname)
 
