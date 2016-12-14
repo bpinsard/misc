@@ -41,11 +41,11 @@ class HCPViewer():
         mlab.figure(size=(1000,1000))
         self._scalar_range = np.array([0,1])
 
-        lh_surf = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','lh.%s.gii'%surf))
-        rh_surf = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','rh.%s.gii'%surf))
+        lh_surf = nb.load(os.path.join(subjects_dir,subject,'surf','lh.%s.gii'%surf))
+        rh_surf = nb.load(os.path.join(subjects_dir,subject,'surf','rh.%s.gii'%surf))
         
-        lh_curv = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','lh.%s.gii'%DEFAULT_CURV))
-        rh_curv = nb.gifti.read(os.path.join(subjects_dir,subject,'surf','rh.%s.gii'%DEFAULT_CURV))
+        lh_curv = nb.load(os.path.join(subjects_dir,subject,'surf','lh.%s.gii'%DEFAULT_CURV))
+        rh_curv = nb.load(os.path.join(subjects_dir,subject,'surf','rh.%s.gii'%DEFAULT_CURV))
         self._curv = np.hstack([lh_curv.darrays[0].data,rh_curv.darrays[0].data])
         
         shift = np.asarray([110,0,0])
@@ -104,7 +104,7 @@ class HCPViewer():
                 self._lut[int(l[0])] = (l[1],tuple(float(c)/255. for c in l[2:5]))
         lut_file.close()
 
-        giis=[nibabel.gifti.read(glob.glob(os.path.join(src_dir,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in uniqlabels]
+        giis=[nibabel.load(glob.glob(os.path.join(src_dir,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in uniqlabels]
 
         self._scene.disable_render = True
         self._rois_surfaces = []
@@ -199,7 +199,9 @@ def plot_montage(image, color_range):
     
     fig, axes = pyplot.subplots(
         1,2,
-        gridspec_kw=dict(width_ratios=[.98,.02], left=0, wspace=0))
+        gridspec_kw=dict(width_ratios=[.98,.02], left=0, wspace=0),
+        figsize=(24,10.8),
+    )
     axes[0].imshow(image)
     axes[0].set_xticks([])
     axes[0].set_yticks([])
@@ -210,4 +212,6 @@ def plot_montage(image, color_range):
         orientation='vertical',
         ticks=np.linspace(0,255,color_range[1]-color_range[0]+1))
     axes[1].set_xticks([])
-    axes[1].set_yticklabels(np.arange(color_range[0],color_range[1]+1))
+    axes[1].set_yticklabels(np.arange(color_range[0],color_range[1]+1),size=18)
+    pyplot.subplots_adjust(left=0, right=.98, top=.99, bottom=0.01) 
+    return fig

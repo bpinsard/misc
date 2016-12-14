@@ -1,3 +1,4 @@
+
 import os,sys,glob,datetime
 import numpy as np
 
@@ -164,7 +165,7 @@ class GrayOrdinatesBandPassSmooth(BaseInterface):
             wp = lb_frac
             ws = np.max([lb_frac - 0.1, 0.1])
         b, a = signal.iirdesign(wp, ws, 1, 60,ftype='ellip')
-        print b,a
+        print(b,a)
 
 #        from scipy.fftpack import dct, idct
 #        for i in xrange(out_ts['FMRI/DATA'].shape[0]):
@@ -277,6 +278,32 @@ def onsets2regs(onsets,tr,nframes):
 #clf.fit(hrf_regs.T,np.vstack((fts_lh,fts_rh)).T)
 
 
+def fmri_goodvox(in_file, mask_file, mask_threshold=.1, factor=.5,neigh_smooth=2):
+    from nipype.utils.filemanip import fname_presuffix
+    import nibabel as nb
+    import os
+    import scipy.ndimage
+    import numpy as np
+    out_file = os.path.abspath(fname_presuffix(in_file,newpath='./',suffix='_goodvox'))
+    nii = nb.load(in_file)
+    data = nii.get_data()
+    diffmap = np.abs(np.diff(data/data.mean(-1)[...,np.newaxis],1,-1)).mean(-1)
+    
+    mask = nb.load(mask_file).get_data() > mask_threshold
+    diffmap_mask = diffmap * mask
+    diffmap_norm = diffmap_mask/np.nanmean(diffmap[mask])
+    diffmap_norm[np.isnan(diffmap_norm)]=0
+    diffmap_sm = scipy.ndimage.filters.gaussian_filter(diffmap_norm,neigh_smooth)/\
+                 scipy.ndimage.filters.gaussian_filter(mask.astype(np.float),neigh_smooth)
+    diffmap_norm = diffmap / np.nanmean(diffmap[mask])/ diffmap_sm
+    diffmap_norm *= mask
+    
+    std = np.nanstd(diffmap_norm[mask])
+    mean = np.nanmean(diffmap_norm[mask])
+    goodvox = (diffmap_norm < mean+std)*mask
+    nb.Nifti1Image(goodvox.astype(np.uint8),nii.affine).to_filename(out_file)
+    return out_file
+
 def get_c_ras(mgz_file):
     import nibabel as nb
     import os
@@ -286,7 +313,7 @@ def get_c_ras(mgz_file):
 
     c_ras[:3,3] = mgz.header['Pxyz_c']
     out_fname = os.path.abspath('c_ras.txt')
-    np.savetxt(out_fname ,c_ras,'%f')
+    np.savetxt(out_fname ,c_ras, str('%f'))
     return out_fname
 
 def wb_command_surface_apply_affine(in_file,c_ras):
@@ -325,17 +352,40 @@ def wb_command_label_resample(in_file,sphere_in,sphere_out,suffix):
     call(['wb_command', '-label-resample', in_file, sphere_in, sphere_out, 'BARYCENTRIC', out_file, '-largest'])
     return out_file
 
+def wb_command_volume_to_surface_mapping(
+        in_file, surface, method,
+        inner_surface=None, outer_surface=None,
+        mask=None):
+    from subprocess import call
+    import os
+    from nipype.utils.filemanip import fname_presuffix
+    out_file = os.path.abspath(fname_presuffix(in_file, newpath='./', suffix='.gii', use_ext=False))
+    cmd = ['wb_command', '-volume-to-surface-mapping', in_file, surface , out_file, '-%s'%method ]
+    if method=='ribbon-constrained':
+        cmd += [inner_surface, outer_surface]
+        if not mask is None:
+            cmd += ['-volume-roi', mask]
+    call(cmd)
+    return out_file
+    
+def wb_command_metric_smoothing(
+        in_file,
+        surface_file,
+        smoothing_kernel=2,
+        method='GEO_GAUSS_AREA'):
+    from subprocess import call
+    import os
+    from nipype.utils.filemanip import fname_presuffix
+    out_file = os.path.abspath(fname_presuffix(in_file, newpath='./', suffix='_smooth'))
+    cmd = ['wb_command', '-metric-smoothing', surface_file, in_file , str(smoothing_kernel), out_file, '-method', method ]
+    call(cmd)
+    return out_file
+
 
 def surface_32k(name='surface_32k', templates_dir='/home/bpinsard/data/src/Pipelines'):
     w=pe.Workflow(name=name)
     
-    n_fs_source = pe.Node(
-        nio.DataGrabber(infields=['subject'],
-                        outfields=['white','pial','sphere','finalsurf'],
-                        raise_on_empty=False,
-                        sort_filelist=True, template='%s/%s/%s'),
-        name='fs_source')
-    n_fs_source.inputs.template_args = dict(
+    fs_templates = dict(
         white = [['subject','surf','?h.white']],
         pial = [['subject','surf','?h.pial']],
         sphere = [['subject','surf','?h.sphere.reg']],
@@ -343,7 +393,15 @@ def surface_32k(name='surface_32k', templates_dir='/home/bpinsard/data/src/Pipel
         aparc_a2009s_annot = [['subject','label','?h.aparc.a2009s.annot']],
         ba_annot = [['subject','label','?h.BA_exvivo.annot']],
         ba_thresh_annot = [['subject','label','?h.BA_exvivo.thresh.annot']]
-        )
+    )
+
+    n_fs_source = pe.Node(
+        nio.DataGrabber(infields=['subject'],
+                        outfields=fs_templates.keys(),
+                        raise_on_empty=False,
+                        sort_filelist=True, template='%s/%s/%s'),
+        name='fs_source')
+    n_fs_source.inputs.template_args = fs_templates
 
     n_c_ras = pe.Node(
         utility.Function(input_names=['mgz_file'],
@@ -466,7 +524,7 @@ def coords_itk2nii(in_file):
     out_file=os.path.abspath('atlas_coords_nii.csv')
     np.savetxt(out_file, coords, 
                header='x,y,z,r,s,t,l',
-               fmt='%f,%f,%f,%d,%d,%d,%d',
+               fmt=bytes('%f,%f,%f,%d,%d,%d,%d'),
                delimiter=',')
     return out_file
 
@@ -521,7 +579,7 @@ def ants_for_subcortical(name='ants_for_subcortical'):
     w.connect([
             (input_node, n_ants_2mni,[('template','fixed_image'),
                                       ('t1','moving_image')]),
-            (n_ants_2mni, n_warp_subctx,[(('composite_transform',filename_to_list),'transforms')]),
+            (n_ants_2mni, n_warp_subctx,[(('composite_transform',wrap(filename_to_list),[]),'transforms')]),
             (input_node, n_warp_subctx,[('coords','input_file')]),
             (n_warp_subctx, n_coords_itk2nii, [('output_file','in_file')]),
             ])
@@ -535,7 +593,7 @@ def convert_motion_par(motion,epi2t1,matrix_file):
     from nipy.algorithms.registration.affine import to_matrix44
     from scipy.signal import medfilt
     mot = np.loadtxt(motion)
-    mot = np.asarray([medfilt(p,3) for p in mot.T]).T
+    #mot = np.asarray([medfilt(p,3) for p in mot.T]).T
     epi2t1reg = np.loadtxt(epi2t1)
     nii = nb.load(matrix_file)
     reg = nii.affine
@@ -552,3 +610,101 @@ n_convert_motion_par = pe.MapNode(
         function=convert_motion_par),
     iterfield=['motion','matrix_file','epi2t1'],
     name='convert_motion_par')
+
+
+
+def workbench_pipeline(name='wb_pipeline', use_mask=False):
+
+    input_node = pe.Node(
+        utility.IdentityInterface(fields=[
+            'lowres_rois_coords',
+            'lowres_surf_lh',
+            'lowres_surf_rh',
+            'in_files',
+            'masks']),
+        name='inputspec')
+    
+
+    n_coords2fakesurf = pe.Node(
+        utility.Function(
+            input_names = ['in_file'],
+            output_names = ['out_file'],
+            function = coords2fakesurf),
+        name='coords2fakesurf'
+    )
+
+
+    itfd = ['in_file']
+    if use_mask:
+        itfd.append('mask')
+    n_volume2surface = pe.MapNode(
+        utility.Function(
+            input_names = ['in_file','surface','method','inner_surface','outer_surface','mask'],
+            output_names = ['out_file'],
+            function = wb_command_volume_to_surface_mapping
+        ),
+        iterfield=itfd,
+        name='volume2surface'
+    )
+    n_volume2surface_lh = n_volume2surface.clone('volume2surface_lh')
+    n_volume2surface_rh = n_volume2surface.clone('volume2surface_rh')
+    n_volume2surface_lh.interface.inputs.method = n_volume2surface_rh.interface.inputs.method = 'ribbon-constrained'
+    n_volume2surface_sc = n_volume2surface.clone('volume2surface_sc')
+    n_volume2surface_sc.interface.inputs.method = 'trilinear'
+    n_volume2surface_sc.iterfield = ['in_file']
+
+    w = pe.Workflow(name=name)
+
+    w.connect([
+
+        (input_node, n_coords2fakesurf,[('lowres_rois_coords','in_file')]),
+        (input_node, n_volume2surface_lh,[
+            (('lowres_surf_lh',utility.select,0),'surface'),
+            (('lowres_surf_lh',utility.select,0),'inner_surface'),
+            (('lowres_surf_lh',utility.select,1),'outer_surface'),
+        ]),
+        (input_node, n_volume2surface_rh,[
+            (('lowres_surf_rh',utility.select,0),'surface'),
+            (('lowres_surf_rh',utility.select,0),'inner_surface'),
+            (('lowres_surf_rh',utility.select,1),'outer_surface'),
+        ]),
+        (n_coords2fakesurf, n_volume2surface_sc,[('out_file','surface')]),
+         
+    ])
+
+    for n in [n_volume2surface_lh,n_volume2surface_rh,n_volume2surface_sc]:
+        w.connect([(input_node,n,[('in_files','in_file')]),])
+        if use_mask:
+            w.connect([(input_node,n,[('masks','mask')]),])
+
+    return w
+
+
+def coords2fakesurf(in_file):
+    import os
+    import numpy as np
+    import nibabel as nb
+    from nipype.utils.filemanip import fname_presuffix
+    subcoords = np.loadtxt(in_file, delimiter=',', usecols=(0,1,2))
+    points_da = nb.gifti.GiftiDataArray(subcoords[:,:3].astype(np.float32), 'pointset')
+    points_da.ext_offset = ''
+    tris_da = nb.gifti.GiftiDataArray(np.arange(6,dtype=np.int32).reshape(-1,3),'triangle')
+    tris_da.ext_offset = ''
+    fake_surf = nb.gifti.GiftiImage(darrays=[points_da, tris_da])
+    out_fname = os.path.abspath(fname_presuffix(in_file, newpath='./', suffix='.gii', use_ext=False))
+    nb.save(fake_surf, out_fname)
+    return out_fname
+
+
+
+def apply_affine(in_file,matrix):
+    import os
+    import numpy as np
+    import nibabel as nb
+    from nipype.utils.filemanip import fname_presuffix
+    nii = nb.load(in_file)
+    out_filename = os.path.abspath(fname_presuffix(in_file, newpath='./', suffix='_reg'))
+    aff = np.loadtxt(matrix)
+    nb.Nifti1Image(nii.get_data(), aff.dot(nii.affine)).to_filename(out_filename) 
+    return out_filename
+

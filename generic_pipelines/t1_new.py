@@ -7,7 +7,7 @@ import nipype.interfaces.nipy.utils as nipyutils
 import nipype.interfaces.nipy.preprocess as nipypp
 import nipype.interfaces.dcmstack as np_dcmstack
 import nipype.utils.filemanip as fmanip
-import nipype.pipeline.file_proxy as fileproxy
+#import nipype.pipeline.file_proxy as fileproxy
 from .utils import *
 
 def dicom_convert_ppl(name='t1_dicom_cvt', crop_t1=True):
@@ -250,15 +250,17 @@ def fs_seg2mask(parc_file,out_file=None):
     del nii, mask, op
     return out_file
 
-def t1_freesurfer_pipeline(name='t1_preproc'):
+def t1_freesurfer_pipeline(name='t1_preproc', use_T2=False):
     inputnode = pe.Node(
         utility.IdentityInterface(
-            fields=['t1_file','subject_id']),
+            fields=['t1_files','t2_file','subject_id']),
         run_without_submitting = True,
         name='inputspec')
 
     n_freesurfer = pe.Node(
-        interface=freesurfer.ReconAll(directive='all',args='-use-gpu'),
+        interface=freesurfer.ReconAll(
+            directive='all',
+            use_T2=use_T2),
         name='freesurfer',)
 
     n_fs_seg2mask = pe.Node(
@@ -266,23 +268,81 @@ def t1_freesurfer_pipeline(name='t1_preproc'):
                          output_names=['out_file'],
                          function=fs_seg2mask),
         name='fs_seg2mask')
+    n_fs_seg2mask.inputs.out_file = 'mask.nii'
 
-    n_autobox_mask = pe.Node(
-        afni.Autobox(padding=3,out_file='%s_crop.nii'),
+    n_autobox_mask_fs = pe.Node(
+        afni.Autobox(padding=15,out_file='%s_crop.nii'),
         name='autobox_mask_fs')
 
+    n_compute_pvmaps = pe.Node(
+        freesurfer.utils.ComputeVolumeFractions(
+            gm_file='pve.nii.gz',
+            niigz=True,),
+        name='compute_pvmaps')
+
+    n_crop_t1 = pe.Node(
+        nipy.Crop(out_file='%s_crop.nii.gz',
+                  outputtype='NIFTI_GZ'),
+        name='crop_t1')
+
+    n_crop_brain = pe.Node(
+        nipy.Crop(out_file='%s_crop.nii.gz',
+                  outputtype='NIFTI_GZ'),
+        name='crop_brain')
+
+    n_t1_nii = pe.Node(
+        freesurfer.MRIConvert(out_type='niigz'),
+        name='t1_nii')
+
+    n_dilate_mask = pe.Node(
+        fsl.DilateImage(
+            operation='mean',
+            kernel_shape='3D'),
+        name='dilate_mask')
+
+
+    n_reg_crop = pe.Node(
+        freesurfer.Tkregister(reg_file='reg_crop.dat',
+                              freeview='freeview.mat',
+                              fsl_reg_out='fsl_reg_out.mat',
+                              lta_out='lta.mat',
+                              xfm_out='xfm.mat',
+                              reg_header=True),
+        name='reg_crop')
+
+
     w = pe.Workflow(name=name)
+
+    if(use_T2):
+        w.connect([(inputnode, n_freesurfer, [('t2_file','T2_file'),])])
+    
     w.connect([
-            (inputnode, n_freesurfer, [
-                    ('t1_file','T1_files'),
-                    ('subject_id','subject_id')]),
-            (n_freesurfer, n_fs_seg2mask,[
-                    (('aparc_aseg',utility.select,1),'parc_file')]),
-            (inputnode,n_fs_seg2mask,[
-            (('t1_file',fname_presuffix_basename,'','_mask.nii','.',False),
-             'out_file')]),
-            (n_fs_seg2mask, n_autobox_mask,[('out_file','in_file')])
-            ])
+        (inputnode, n_freesurfer, [
+            ('t1_files','T1_files'),
+            ('subject_id','subject_id')]),
+        (n_freesurfer, n_fs_seg2mask,[
+            (('aparc_aseg',utility.select,1),'parc_file')]),
+        (n_fs_seg2mask, n_autobox_mask_fs,[('out_file','in_file')]),
+        (n_autobox_mask_fs, n_dilate_mask,[('out_file','in_file')]),
+        
+        (n_autobox_mask_fs,n_crop_t1,
+         [('%s_min'%c,)*2 for c in 'xyz']+
+         [(('%s_max'%c, wrap(operator.__add__), [1]),'%s_max'%c) for c in 'xyz']), # add 1 for boundary inclusive
+        (n_freesurfer,n_crop_t1,[('T1','in_file')]),
+
+        (n_autobox_mask_fs,n_crop_brain,
+         [('%s_min'%c,)*2 for c in 'xyz']+
+         [(('%s_max'%c, wrap(operator.__add__), [1]),'%s_max'%c) for c in 'xyz']), # add 1 for boundary inclusive
+        (n_freesurfer,n_crop_brain,[('norm','in_file')]),
+        
+        (n_freesurfer,n_t1_nii,[('T1','in_file')]),
+
+        (n_freesurfer,n_reg_crop,[('norm','target'),('subject_id',)*2,('subjects_dir',)*2]),
+        (n_autobox_mask_fs,n_reg_crop,[('out_file','mov')]),
+        (n_reg_crop, n_compute_pvmaps, [('reg_file',)*2]),
+        (n_autobox_mask_fs, n_compute_pvmaps, [('out_file','in_file')]),
+        (n_freesurfer,n_compute_pvmaps,[('subjects_dir',)*2])
+    ])
     return w
 
 def extract_wm_regions(seg_file,rois_ids):
@@ -335,7 +395,7 @@ def extract_wm_surface(name='extract_wm_surface'):
         name='smooth_tesselation')
 
     n_surf_decimate = pe.Node(
-        freesurfer.Decimate(decimation_level=.2),
+        freesurfer.utils.Decimate(decimation_level=.2),
         name='surf_decimate')
 
     w = pe.Workflow(name=name)

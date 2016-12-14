@@ -4,7 +4,8 @@ import operator
 # wrap builtin methods
 # when used for connection function, supplementary args needs to be in a list
 def wrap(method):
-    return dumps('def %s_wrapped(*args,**kwargs): from %s import %s ;return %s(*args,**kwargs)'%(method.__name__,method.__module__,method.__name__,method.__name__))
+    return 'def %s_wrapped(*args,**kwargs): from %s import %s ;return %s(*args,**kwargs)'%(method.__name__,method.__module__,method.__name__,method.__name__)
+#    return dumps('def %s_wrapped(*args,**kwargs): from %s import %s ;return %s(*args,**kwargs)'%(method.__name__,method.__module__,method.__name__,method.__name__))
 
 # recursive item getter first args are evaluated on top of the structure
 def getitem_rec(*args):
@@ -56,3 +57,12 @@ def wildcard(p,s=slice(0,None),wc='*'):
         elif isinstance(s,int):
             return os.path.join(p[s],wc)
     return os.path.join(p,wc)
+
+
+
+def xfm2mat(xfm):
+    import os
+    import numpy as np
+    mat=np.loadtxt(xfm, skiprows=5,usecols=range(4))
+    np.savetxt("out.mat",np.vstack([mat,[0,0,0,1]]))
+    return os.path.abspath("out.mat")
