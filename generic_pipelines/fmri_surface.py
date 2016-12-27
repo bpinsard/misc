@@ -400,6 +400,7 @@ def surface_32k(name='surface_32k', templates_dir='/home/bpinsard/data/src/Pipel
                         outfields=fs_templates.keys(),
                         raise_on_empty=False,
                         sort_filelist=True, template='%s/%s/%s'),
+        run_without_submitting=True,
         name='fs_source')
     n_fs_source.inputs.template_args = fs_templates
 
@@ -407,6 +408,7 @@ def surface_32k(name='surface_32k', templates_dir='/home/bpinsard/data/src/Pipel
         utility.Function(input_names=['mgz_file'],
                          output_names=['c_ras'],
                          function=get_c_ras),
+        run_without_submitting=True,
         name='c_ras')
     
     n_white_to_gifti = pe.MapNode(
