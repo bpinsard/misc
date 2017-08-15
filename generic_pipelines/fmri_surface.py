@@ -655,6 +655,16 @@ def workbench_pipeline(name='wb_pipeline', use_mask=False):
     n_volume2surface_sc.interface.inputs.method = 'trilinear'
     n_volume2surface_sc.iterfield = ['in_file']
 
+
+    n_merge_gii = pe.Node(
+        utility.Function(
+            input_names = ['lh_tss','rh_tss','sc_tss'],
+            output_names = ['grouped_tss'],
+            function_str = 'def merge_gii(lh_tss,rh_tss,sc_tss): return [(l,r,s) for l,r,s in zip(lh_tss,rh_tss,sc_tss)]',
+        ),
+        name='merge_gii')
+
+
     w = pe.Workflow(name=name)
 
     w.connect([
@@ -671,7 +681,11 @@ def workbench_pipeline(name='wb_pipeline', use_mask=False):
             (('lowres_surf_rh',utility.select,1),'outer_surface'),
         ]),
         (n_coords2fakesurf, n_volume2surface_sc,[('out_file','surface')]),
-         
+
+        (n_volume2surface_lh, n_merge_gii,[('out_file','lh_tss')]),
+        (n_volume2surface_rh, n_merge_gii,[('out_file','rh_tss')]),
+        (n_volume2surface_sc, n_merge_gii,[('out_file','sc_tss')]),
+        
     ])
 
     for n in [n_volume2surface_lh,n_volume2surface_rh,n_volume2surface_sc]:

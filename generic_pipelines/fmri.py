@@ -1025,8 +1025,15 @@ def do_merge(in_files, pa_scan_name):
     for ap, pa in appa_pairs:
         ap_nii = nb.load(ap)
         pa_nii = nb.load(pa)
+        ap_nvol = ap_nii.shape[-1] 
+        pa_nvol = pa_nii.shape[-1]
+        if ap_nvol >= pa_nvol:
+            appa_data = np.concatenate([ap_nii.get_data()[...,:pa_nii.shape[-1]],pa_nii.get_data()],-1)
+        else:
+            ap_data = ap_nii.get_data()
+            ap_data = np.concatenate([ap_data[...,:1].repeat(pa_nvol-ap_nvol,-1), ap_data],-1)
         appa_nii = nb.Nifti1Image(
-            np.concatenate([ap_nii.get_data()[...,:pa_nii.shape[-1]],pa_nii.get_data()],-1),
+            appa_data,
             ap_nii.get_affine())
         out_file = fname_presuffix(ap, suffix='_appa', newpath=os.getcwd())
         appa_nii.to_filename(out_file)

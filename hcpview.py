@@ -205,7 +205,7 @@ def plot_montage(image, color_range):
     axes[0].imshow(image)
     axes[0].set_xticks([])
     axes[0].set_yticks([])
-    pyplot.matplotlib.colorbar.ColorbarBase(
+    cbar = pyplot.matplotlib.colorbar.ColorbarBase(
         axes[1],
         cmap=pyplot.cm.viridis,
         norm=pyplot.matplotlib.colors.Normalize(vmin=0, vmax=pyplot.cm.viridis.N),
@@ -214,4 +214,7 @@ def plot_montage(image, color_range):
     axes[1].set_xticks([])
     axes[1].set_yticklabels(np.arange(color_range[0],color_range[1]+1),size=18)
     pyplot.subplots_adjust(left=0, right=.98, top=.99, bottom=0.01) 
-    return fig
+    return fig, axes, cbar
+
+#cbar.set_ticks(np.linspace(0,1,5))
+#cbar.set_ticklabels(np.arange(-20,21,5))
