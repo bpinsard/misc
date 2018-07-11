@@ -1,4 +1,3 @@
-
 import os,sys,glob,datetime
 import numpy as np
 
@@ -530,6 +529,36 @@ def coords_itk2nii(in_file):
                delimiter=',')
     return out_file
 
+
+def warp_subcortical(name='warp_subcortical'):
+
+    input_node = pe.Node(
+        utility.IdentityInterface(fields = ['t1', 'template', 'coords']),
+        name = 'inputspec')
+
+    n_warp_to_mni = pe.Node(
+        utility.Function(
+            input_names = ['static_fname','moving_fname'],
+            output_names = ['warp','warped'],
+            function = warp_syn_dipy),
+        name = 'warp_to_mni')
+
+    n_warp_coords = pe.Node(
+        utility.Function(
+            input_names = ['warp_file', 'coords_file'],
+            output_names = ['warped_coords'],
+            function = warp_coords_dipy),
+        name = 'warp_coords')
+    w = pe.Workflow(name=name)
+
+    w.connect([
+            (input_node, n_warp_to_mni,[('template','static_fname'),
+                                      ('t1','moving_fname')]),
+            (n_warp_to_mni, n_warp_coords,[('warp','warp_file')]),
+            (input_node, n_warp_coords,[('coords','coords_file')]),
+            ])
+    return w
+
 def ants_for_subcortical(name='ants_for_subcortical'):
 
     input_node = pe.Node(
@@ -724,3 +753,97 @@ def apply_affine(in_file,matrix):
     nb.Nifti1Image(nii.get_data(), aff.dot(nii.affine)).to_filename(out_filename) 
     return out_filename
 
+
+def warp_syn_dipy(static_fname, moving_fname):
+    import os
+    import numpy as np
+    import nibabel as nb
+    from dipy.align.metrics import CCMetric
+    from dipy.align.imaffine import (transform_centers_of_mass,
+                                     AffineMap,
+                                     MutualInformationMetric,
+                                     AffineRegistration)
+    from dipy.align.transforms import (TranslationTransform3D,
+                                       RigidTransform3D,
+                                       AffineTransform3D)
+    from dipy.align.imwarp import (DiffeomorphicMap,
+                                   SymmetricDiffeomorphicRegistration)
+
+    from nipype.utils.filemanip import fname_presuffix
+
+    static = nb.load(static_fname)
+    moving = nb.load(moving_fname)
+    
+    c_of_mass = transform_centers_of_mass(static.get_data(), static.affine,
+                                          moving.get_data(), moving.affine)
+    nbins = 32
+    sampling_prop = None
+    metric = MutualInformationMetric(nbins, sampling_prop)
+    level_iters = [10000, 1000, 100]
+    sigmas = [3.0, 1.0, 0.0]
+    factors = [4, 2, 1]
+    affreg = AffineRegistration(metric=metric,
+                                level_iters=level_iters,
+                                sigmas=sigmas,
+                                factors=factors)
+    transform = TranslationTransform3D()
+    params0 = None
+    starting_affine = c_of_mass.affine
+    translation = affreg.optimize(static.get_data(), moving.get_data(),
+                                  transform, params0,
+                                  static.affine, moving.affine,
+                                  starting_affine=starting_affine)
+    
+    transform = RigidTransform3D()
+    params0 = None
+    starting_affine = translation.affine
+    rigid = affreg.optimize(static.get_data(), moving.get_data(), transform, params0,
+                            static.affine, moving.affine,
+                            starting_affine=starting_affine)
+    transform = AffineTransform3D()
+    params0 = None
+    starting_affine = rigid.affine
+    affine = affreg.optimize(static.get_data(), moving.get_data(), transform, params0,
+                             static.affine, moving.affine,
+                             starting_affine=starting_affine)
+    
+    metric = CCMetric(3, sigma_diff=3.)
+    level_iters = [25, 10, 5]
+    sdr = SymmetricDiffeomorphicRegistration(metric, level_iters)
+    starting_affine = affine.affine
+    mapping = sdr.optimize(
+	static.get_data(), moving.get_data(),
+	static.affine, moving.affine,
+	starting_affine)
+
+    warped_filename = os.path.abspath(fname_presuffix(moving_fname, newpath='./', suffix='_warped', use_ext=True))
+    warped = nb.Nifti1Image(mapping.transform(moving.get_data()), static.affine)
+    warped.to_filename(warped_filename)
+
+    warp_filename = os.path.abspath(fname_presuffix(moving_fname, newpath='./', suffix='_warp.npz', use_ext=False))
+    np.savez(warp_filename,prealign=mapping.prealign,forward=mapping.forward,backward=mapping.backward)
+
+    return warp_filename, warped_filename
+
+def warp_coords_dipy(warp_file, coords_file):
+    import os
+    from builtins import str
+    import numpy as np
+    from nipype.utils.filemanip import fname_presuffix
+    import dipy.align.vector_fields as vfu
+    import nibabel as nb
+    
+    coords = np.loadtxt(coords_file, delimiter=',', dtype=np.float)
+    coords[:,:2] = -coords[:,:2] # flip as the atlas is in itk convention
+    warp = np.load(warp_file)
+    backward = warp['backward']
+    prealign = warp['prealign']
+    postalign = np.linalg.inv(prealign)
+    shift = vfu.interpolate_vector_3d(backward, coords[:,:3])[0]
+    coords[:,:3] += shift
+    coords[:,:3] = nb.affines.apply_affine(postalign, coords[:,:3])
+
+    out_fname = os.path.abspath(fname_presuffix(coords_file, newpath='./', suffix='_warped', use_ext=True))
+    np.savetxt(out_fname, coords, fmt='%f,'*3+'%d,'*3+'%d')
+    return out_fname
+    
