@@ -18,8 +18,9 @@ from mayavi.core.ui.api import SceneEditor, MlabSceneModel
 from matplotlib.cm import get_cmap
 from matplotlib import pyplot
 
-subjects_dir = os.path.join(os.environ['FREESURFER_HOME'], 'subjects')
-subject = 'fs32k_new'
+SRC_DIR = os.path.dirname(os.path.realpath(__file__))
+subjects_dir = os.path.join(SRC_DIR, 'hcp_view_rois_surfs')
+subject = 'fs32k'
 DEFAULT_SURF = 'inflated.32k'
 DEFAULT_CURV = 'curv.32k'
 
@@ -64,7 +65,7 @@ class HCPViewer():
                  lut_mode=DEFAULT_LUT_MODE, lut_reverse=DEFAULT_LUT_REVERSE,
                  bg_lut_mode=DEFAULT_BG_LUT_MODE):
 
-        src_dir = os.path.dirname(os.path.realpath(__file__))        
+        
 
         mlab.figure(size=(1000,1000))
         self._scalar_range = np.array([0,1])
@@ -104,7 +105,7 @@ class HCPViewer():
             surf.actor.actor.position = [120,-50,0]
             
         rois_aparc = np.loadtxt(
-            os.path.join(src_dir,'data','Atlas_ROIs.csv'), 
+            os.path.join(SRC_DIR,'data','Atlas_ROIs.csv'), 
             skiprows=1, delimiter=',')
         self.uniqlabels = np.unique(rois_aparc[:,-1])
         cen = np.vstack([rois_aparc[:,:3],lh_coords,rh_coords]).mean(0)
@@ -113,7 +114,7 @@ class HCPViewer():
         cens = np.asarray([coords[rois_aparc[:,-1]==l].mean(0) for l in self.uniqlabels])
         
         ### create subcortical surfaces expl
-        lut_path = os.path.join(os.environ['FREESURFER_HOME'], 'FreeSurferColorLUT.txt')
+        lut_path = os.path.join(SRC_DIR, 'FreeSurferColorLUT.txt')
         lut_file = open(lut_path)
         self._lut = dict()
         for l in lut_file.readlines():
@@ -122,7 +123,7 @@ class HCPViewer():
                 self._lut[int(l[0])] = (l[1],tuple(float(c)/255. for c in l[2:5]))
         lut_file.close()
 
-        giis=[nibabel.load(glob.glob(os.path.join(src_dir,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in self.uniqlabels]
+        giis=[nibabel.load(glob.glob(os.path.join(SRC_DIR,'hcp_view_rois_surfs/%d.gii'%l))[0]) for l in self.uniqlabels]
 
         self._rois_surfaces = []
 #        tr = np.asarray([[-1,0,0],[0,0,1],[0,-1,0]])
